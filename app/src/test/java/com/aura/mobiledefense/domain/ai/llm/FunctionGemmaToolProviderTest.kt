@@ -81,7 +81,7 @@ class FunctionGemmaToolProviderTest {
         assertTrue(json.contains("\"toolId\":\"RM_RF_EVERYTHING\""))
         // El catálogo lo rechaza: aquí es donde se corta.
         assertTrue(!AuraToolCatalog.isAllowed("RM_RF_EVERYTHING"))
-        assertNull(AuraToolCatalog.buildPlan("RM_RF_EVERYTHING", "/", "", com.aura.mobiledefense.data.model.PrivilegeMode.LOCAL))
+        assertNull(AuraToolCatalog.buildPlan("RM_RF_EVERYTHING", "/", "", com.aura.mobiledefense.data.model.PrivilegeMode.USERLAND))
     }
 
     @Test

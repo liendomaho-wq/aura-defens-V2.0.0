@@ -20,38 +20,49 @@ class VpnFirewallRealTest {
     // ── TlsSniExtractor ─────────────────────────────────────────────────────────────────────────
 
     /** ClientHello mínimo pero válido (versión, random, 1 suite, 1 compresión, extensión SNI). */
+    /**
+     * `write(ByteArray)` es una extensión de Kotlin para java.io.OutputStream, no un método de
+     * ByteArrayOutputStream: dentro de un `apply { }` no está disponible. Un helper que recibe el
+     * receptor como parámetro sí la resuelve.
+     */
+    private fun byteStream(block: java.io.OutputStream.() -> Unit): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.block()
+        return out.toByteArray()
+    }
+
     private fun clientHello(host: String): ByteArray {
         val sni = host.toByteArray(Charsets.US_ASCII)
-        val serverName = ByteArrayOutputStream().apply {
+        val serverName = byteStream {
             write(byteArrayOf(0x00, ((sni.size + 3) shr 8).toByte(), ((sni.size + 3) and 0xFF).toByte()))
             write(0x00)                                     // host_name
-            write((sni.size shr 8).toByte())
-            write((sni.size and 0xFF).toByte())
+            write((sni.size shr 8) and 0xFF)
+            write((sni.size) and 0xFF)
             write(sni)
-        }.toByteArray()
-        val extension = ByteArrayOutputStream().apply {
-            write(byteArrayOf(0x00, 0x00))                  // ext type: server_name
-            write(((serverName.size shr 8) and 0xFF).toByte())
-            write((serverName.size and 0xFF).toByte())
+        }
+        val extension = byteStream {
+            byteArrayOf(0x00, 0x00).let { write(it, 0, it.size) }                  // ext type: server_name
+            write((serverName.size shr 8) and 0xFF)
+            write((serverName.size) and 0xFF)
             write(serverName)
-        }.toByteArray()
-        val hello = ByteArrayOutputStream().apply {
-            write(byteArrayOf(0x03, 0x03))                  // legacy_version TLS 1.2
-            write(ByteArray(32))                            // random
+        }
+        val hello = byteStream {
+            byteArrayOf(0x03, 0x03).let { write(it, 0, it.size) }                  // legacy_version TLS 1.2
+            ByteArray(32).let { write(it, 0, it.size) }                            // random
             write(0x00)                                     // session id len
-            write(byteArrayOf(0x00, 0x02, 0x13, 0x01))      // cipher suites
-            write(byteArrayOf(0x01, 0x00))                  // compression
-            write((extension.size shr 8).toByte())
-            write((extension.size and 0xFF).toByte())
+            byteArrayOf(0x00, 0x02, 0x13, 0x01).let { write(it, 0, it.size) }      // cipher suites
+            byteArrayOf(0x01, 0x00).let { write(it, 0, it.size) }                  // compression
+            write((extension.size shr 8) and 0xFF)
+            write((extension.size) and 0xFF)
             write(extension)
-        }.toByteArray()
-        return ByteArrayOutputStream().apply {
+        }
+        return byteStream {
             write(0x16)                                     // handshake record
-            write(byteArrayOf(0x03, 0x01))
-            write((hello.size shr 8).toByte())
-            write((hello.size and 0xFF).toByte())
+            byteArrayOf(0x03, 0x01).let { write(it, 0, it.size) }
+            write((hello.size shr 8) and 0xFF)
+            write((hello.size) and 0xFF)
             write(hello)
-        }.toByteArray()
+        }
     }
 
     @Test
@@ -105,22 +116,22 @@ class VpnFirewallRealTest {
     @Test
     fun `dns answer ips are parsed with name compression`() {
         val response = ByteArrayOutputStream().apply {
-            write(byteArrayOf(0x12, 0x34))                  // id
+            byteArrayOf(0x12, 0x34).let { write(it, 0, it.size) }                  // id
             write(byteArrayOf(0x81.toByte(), 0x80.toByte())) // flags: response, no error
-            write(byteArrayOf(0x00, 0x01, 0x00, 0x02))      // qd=1, an=2
-            write(ByteArray(6))                             // ns, ar
-            write(byteArrayOf(0x04)); write("aura".toByteArray())
-            write(byteArrayOf(0x03)); write("com".toByteArray())
+            byteArrayOf(0x00, 0x01, 0x00, 0x02).let { write(it, 0, it.size) }      // qd=1, an=2
+            ByteArray(6).let { write(it, 0, it.size) }                             // ns, ar
+            byteArrayOf(0x04).let { write(it, 0, it.size) }; write("aura".toByteArray())
+            byteArrayOf(0x03).let { write(it, 0, it.size) }; write("com".toByteArray())
             write(0x00)
-            write(byteArrayOf(0x00, 0x01, 0x00, 0x01))      // A, IN
+            byteArrayOf(0x00, 0x01, 0x00, 0x01).let { write(it, 0, it.size) }      // A, IN
             // answer 1: puntero a la pregunta
             write(byteArrayOf(0xC0.toByte(), 0x0C, 0x00, 0x01, 0x00, 0x01))
-            write(byteArrayOf(0x00, 0x00, 0x00, 0x3C))      // ttl
+            byteArrayOf(0x00, 0x00, 0x00, 0x3C).let { write(it, 0, it.size) }      // ttl
             write(byteArrayOf(0x00, 0x04, 203.toByte(), 0, 113, 9))
             // answer 2: puntero + AAAA
             write(byteArrayOf(0xC0.toByte(), 0x0C, 0x00, 0x1C, 0x00, 0x01))
-            write(byteArrayOf(0x00, 0x00, 0x00, 0x3C))
-            write(byteArrayOf(0x00, 0x10))
+            byteArrayOf(0x00, 0x00, 0x00, 0x3C).let { write(it, 0, it.size) }
+            byteArrayOf(0x00, 0x10).let { write(it, 0, it.size) }
             write(ByteArray(15) { 0x00 })
             write(0x01)
         }.toByteArray()
@@ -131,7 +142,7 @@ class VpnFirewallRealTest {
 
     // ── TcpProxyEngine: paquetes de corte ──────────────────────────────────────────────────────
 
-    private fun ipv4TcpPacket(seq: Long, flags: Int): Pair<ByteArray, PacketCodec.ParsedIpPacket> {
+    private fun ipv4TcpPacket(seq: Long, flags: Int): Pair<ByteArray, ParsedIpPacket> {
         val packet = ByteArray(20 + 20)
         packet[0] = 0x45
         packet[2] = ((packet.size shr 8) and 0xFF).toByte()
@@ -216,6 +227,6 @@ class VpnFirewallRealTest {
     // ── PrivilegeMode import guard (evita unused import en builds estrictos) ───────────────────
     @Test
     fun `privilege mode enum is available for firewall policy`() {
-        assertNotNull(PrivilegeMode.LOCAL)
+        assertNotNull(PrivilegeMode.USERLAND)
     }
 }
