@@ -54,7 +54,8 @@ object AuraDatabaseCipher {
             return FrameworkSQLiteOpenHelperFactory()
         }
         passphrase = key
-        return SupportOpenHelperFactory(key.copyOf())
+        // SQLCipher 4.x pide los bytes UTF-8 de la clave, no un CharArray.
+        return SupportOpenHelperFactory(String(key).toByteArray(Charsets.UTF_8))
     }
 
     /**

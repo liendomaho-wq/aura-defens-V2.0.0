@@ -54,7 +54,7 @@ object TcpProxyEngine {
      * @return true si el paquete se atendió (proxificado o cortado); false si hay que ignorarlo
      */
     fun handleFromDevice(
-        parsed: PacketCodec.ParsedIpPacket,
+        parsed: ParsedIpPacket,
         packet: ByteArray,
         transport: Transport,
         onBlocked: (String) -> Unit,
@@ -159,7 +159,7 @@ object TcpProxyEngine {
         val ack: Boolean get() = flags and 0x10 != 0
 
         companion object {
-            fun parse(packet: ByteArray, parsed: PacketCodec.ParsedIpPacket): TcpSegment? {
+            fun parse(packet: ByteArray, parsed: ParsedIpPacket): TcpSegment? {
                 if (parsed.protocol != PacketCodec.PROTO_TCP) return null
                 val o = parsed.payloadOffset
                 if (parsed.payloadLength < 20) return null
@@ -189,7 +189,7 @@ object TcpProxyEngine {
      * Paquete TCP RST para cortar la conexión desde el punto de vista del dispositivo.
      * Construye IPv4 + TCP con checksums correctos (sin esto Android descarta el paquete).
      */
-    fun buildRst(parsed: PacketCodec.ParsedIpPacket, tcp: TcpSegment): ByteArray {
+    fun buildRst(parsed: ParsedIpPacket, tcp: TcpSegment): ByteArray {
         val tcpHeader = ByteArray(20)
         putU16(tcpHeader, 0, tcp.destPort)          // respuesta: puertos invertidos
         putU16(tcpHeader, 2, tcp.sourcePort)
@@ -213,7 +213,7 @@ object TcpProxyEngine {
     }
 
     /** ICMP destino inalcanzable (puerto), para cortar rápido conexiones UDP bloqueadas. */
-    fun buildIcmpPortUnreachable(parsed: PacketCodec.ParsedIpPacket, originalIp: ByteArray): ByteArray {
+    fun buildIcmpPortUnreachable(parsed: ParsedIpPacket, originalIp: ByteArray): ByteArray {
         val icmp = ByteArray(8 + 8 + minOf(parsed.payloadLength, 8))
         icmp[0] = 3      // destination unreachable
         icmp[1] = 3      // port unreachable
