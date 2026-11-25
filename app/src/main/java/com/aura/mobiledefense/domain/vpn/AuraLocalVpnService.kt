@@ -142,8 +142,9 @@ class AuraLocalVpnService : VpnService() {
                 // bloquear un dominio o un puerto no tendría efecto sobre el tráfico real.
                 // Con 0.0.0.0/0 todo el tráfico pasa por el proxy de sockets, que aplica las
                 // reglas del firewall paquete a paquete.
+                // IPv6 queda fuera del túnel a propósito: el proxy solo habla IPv4 y enrutar :: sin
+                // manejarlo cortaría toda la conectividad v6 del dispositivo.
                 runCatching { builder.addRoute("0.0.0.0", 0) }
-                runCatching { builder.addRoute("::", 0) }
 
                 // Prevent Aura itself from looping inside the VPN
                 runCatching { builder.addDisallowedApplication(packageName) }

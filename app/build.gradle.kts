@@ -13,7 +13,10 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.nyxcore.xkpqvr"
+    // Coincide con `namespace`: antes era el id de AI Studio (com.aistudio.nyxcore.xkpqvr), que
+    // hacía que la app no pudiera identificarse como suya (proveedores, FileProvider, rutas de
+    // datos). Cambiarlo rompe la instalación previa: es un cambio de app, no una actualización.
+    applicationId = "com.aura.mobiledefense"
     minSdk = 24
     targetSdk = 36
     versionCode = 1

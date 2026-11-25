@@ -199,13 +199,18 @@ app/src/main/java/com/aura/mobiledefense/
 
 ## Roadmap
 
-- [ ] Migraciones reales de Room + tests de migración (hoy `MIGRATIONS` está vacío)
 - [ ] Cifrado en reposo de la evidencia (SQLCipher o cifrado por campo con AndroidKeyStore)
 - [ ] Partir `NyxViewModel` (722 líneas) y los canvas de UI en módulos más pequeños
-- [ ] Cobertura de tests para los engines que tocan el sistema
-- [ ] `applicationId` propio (hoy sigue siendo el de AI Studio: `com.aistudio.nyxcore.xkpqvr`)
+- [ ] Cobertura de tests para los engines que tocan el sistema (ya hay 21 pruebas nuevas de
+      firewall y de la política de privilegios)
+- [x] `applicationId` propio (`com.aura.mobiledefense`, alineado con el `namespace`)
 - [x] Modo "IA Online" implementado como LLM real (BYOK) con catálogo cerrado de herramientas
-- [ ] Modelo on-device real (Gemini Nano / MediaPipe) en la ranura `OnDeviceProvider`
+- [ ] Modelo on-device real: el adaptador `FunctionGemmaToolProvider` y el kit de entrenamiento
+      (`aura-train/`) están listos; falta el motor de inferencia (MediaPipe LLM / llama.cpp) y los
+      pesos en `assets/`
+- [x] Firewall real: ruta 0.0.0.0/0, proxy TCP, bloqueo por SNI y política DoH/DoT
+- [x] Migraciones de Room 1→2→3 con pruebas instrumentadas
+- [x] `RootCommandPolicy` con la regla 3 implementada y un único `ShellRunner`
 
 ## Aviso legal
 
