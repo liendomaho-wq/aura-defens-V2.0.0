@@ -1,5 +1,7 @@
 package com.aura.mobiledefense.domain.ai.llm
 
+import com.aura.mobiledefense.domain.ai.llm.AuraToolCatalog.LlmToolSpec
+import com.aura.mobiledefense.domain.ai.llm.AuraToolCatalog.TargetKind
 import org.json.JSONArray
 import org.json.JSONObject
 

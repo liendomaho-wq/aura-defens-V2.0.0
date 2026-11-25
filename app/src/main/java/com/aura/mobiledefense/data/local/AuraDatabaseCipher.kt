@@ -80,14 +80,15 @@ object AuraDatabaseCipher {
 
         val existing = prefs.getString(PREF_BLOB, null)
         if (existing != null && master != null) {
-            runCatching { return decrypt(master, existing).toCharArray() }
+            runCatching { return String(decrypt(master, existing), Charsets.UTF_8).toCharArray() }
                 .onFailure { Log.e(TAG, "Blob de clave ilegible; se genera uno nuevo", it) }
         }
 
         val secretKey = master ?: generateMasterKey()
         val dbKey = ByteArray(32).also { SecureRandom().nextBytes(it) }
         prefs.edit().putString(PREF_BLOB, encrypt(secretKey, dbKey)).apply()
-        return dbKey.toHexChars()
+        // CharArray (UTF-8) y no ByteArray: es lo que acepta SupportOpenHelperFactory.
+        return String(dbKey.toHexBytes(), Charsets.UTF_8).toCharArray()
     }
 
     private fun generateMasterKey(): SecretKey {
@@ -123,9 +124,9 @@ object AuraDatabaseCipher {
         return cipher.doFinal(raw, 12, raw.size - 12)
     }
 
-    private fun ByteArray.toHexChars(): CharArray {
-        val hex = "0123456789abcdef"
-        val out = CharArray(size * 2)
+    private fun ByteArray.toHexBytes(): ByteArray {
+        val hex = "0123456789abcdef".toByteArray(Charsets.US_ASCII)
+        val out = ByteArray(size * 2)
         forEachIndexed { i, b ->
             val v = b.toInt() and 0xFF
             out[i * 2] = hex[v ushr 4]
