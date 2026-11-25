@@ -18,6 +18,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // SQLCipher trae su propia librería nativa: hay que cargarla antes de que Room abra la
+        // base cifrada, o la primera consulta falla en dispositivos con ABI inesperada.
+        System.loadLibrary("sqlcipher")
+
         // STEP 1: Full-bleed dark edge-to-edge system bars
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),

@@ -134,6 +134,8 @@ dependencies {
   // implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.androidx.security.crypto)
+  // Cifrado en reposo de la base forense (ver AuraDatabaseCipher)
+  implementation(libs.sqlcipher.android)
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
@@ -142,6 +144,7 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
+  androidTestImplementation(libs.sqlcipher.android)
   // Room 2.6+ ya no necesita esquemas generados para probar migraciones: basta el SQL.
   testImplementation(libs.androidx.room.testing)
   androidTestImplementation(platform(libs.androidx.compose.bom))

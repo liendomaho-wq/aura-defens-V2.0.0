@@ -47,6 +47,11 @@ abstract class NyxDatabase : RoomDatabase() {
                         // history and firewall rules. Every schema change must ship a real Migration
                         // in `migrations` below instead of silently wiping the user's history.
                         .addMigrations(*MIGRATIONS)
+                        // Cifrado en reposo: la evidencia forense (hosts auditados, CVE que te
+                        // afectan, historial) es de lo más sensible que guarda la app. SQLCipher
+                        // cifra el archivo completo con una clave del AndroidKeyStore, así que un
+                        // backup de la carpeta o un móvil con root no lo lee en claro.
+                        .openHelperFactory(AuraDatabaseCipher.factory(context))
                         .build()
                         .also { INSTANCE = it }
                 }
