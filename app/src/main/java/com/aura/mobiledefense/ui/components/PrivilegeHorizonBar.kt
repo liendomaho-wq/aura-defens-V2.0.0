@@ -5,7 +5,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -61,6 +63,7 @@ import com.aura.mobiledefense.ui.theme.NyxViolet
 import com.aura.mobiledefense.ui.theme.NyxVoid
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PrivilegeHorizonBar(
     privilegeMode: PrivilegeMode,
@@ -70,6 +73,7 @@ fun PrivilegeHorizonBar(
     monitorBanner: String?,
     onSwitchPrivilegeMode: (PrivilegeMode) -> Unit,
     onToggleEngineMode: (AiEngineMode) -> Unit,
+    onOpenLlmSettings: () -> Unit,
     onPullDownMemory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -127,30 +131,48 @@ fun PrivilegeHorizonBar(
 
             // Tappable text telemetry line to switch Online <-> Local Autonomous without buttons
             val engineText = if (engineMode == AiEngineMode.ONLINE_CLOUD) {
-                "AURA IA · ONLINE (${knowledgeStats.totalRules} firmas)"
+                "AURA IA · LLM ON (${knowledgeStats.totalRules} firmas)"
             } else {
-                "AURA IA · OFFLINE (${knowledgeStats.totalRules} firmas)"
+                "AURA IA · LOCAL (${knowledgeStats.totalRules} firmas)"
             }
-            Text(
-                text = engineText,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    color = if (engineMode == AiEngineMode.ONLINE_CLOUD) NyxViolet else NyxEmerald
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .heightIn(min = 32.dp)
-                    .testTag("engine_mode_toggle")
-                    .clickable {
-                        val next = if (engineMode == AiEngineMode.ONLINE_CLOUD) {
-                            AiEngineMode.LOCAL_AUTONOMOUS
-                        } else {
-                            AiEngineMode.ONLINE_CLOUD
-                        }
-                        onToggleEngineMode(next)
-                    }
-                    .padding(vertical = 6.dp)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = engineText,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (engineMode == AiEngineMode.ONLINE_CLOUD) NyxViolet else NyxEmerald
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .heightIn(min = 32.dp)
+                        .testTag("engine_mode_toggle")
+                        .combinedClickable(
+                            onClick = {
+                                val next = if (engineMode == AiEngineMode.ONLINE_CLOUD) {
+                                    AiEngineMode.LOCAL_AUTONOMOUS
+                                } else {
+                                    AiEngineMode.ONLINE_CLOUD
+                                }
+                                onToggleEngineMode(next)
+                            },
+                            onLongClick = onOpenLlmSettings
+                        )
+                        .padding(vertical = 6.dp)
+                )
+                // Explicit affordance for the BYOK sheet: long-press is discoverable only by accident.
+                Text(
+                    text = "⚙",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = if (engineMode == AiEngineMode.ONLINE_CLOUD) NyxViolet else NyxTextMuted
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 40.dp)
+                        .width(40.dp)
+                        .testTag("open_llm_settings")
+                        .clickable { onOpenLlmSettings() }
+                        .padding(start = 8.dp, top = 6.dp, bottom = 6.dp)
+                )
+            }
         }
 
         // Gesture-based Magnetic Privilege Horizon (minimum 48dp touch area, zero buttons)

@@ -36,3 +36,20 @@ Fuera de alcance:
 - Acuse de recibo en 72 h
 - Evaluación y plan de corrección en 7 días
 - Crédito público en el advisory si lo deseas
+
+## Motor LLM (superficie añadida en v1.0.0-llm)
+
+El LLM es un componente **no confiable** por diseño. En alcance:
+
+- Conseguir que el modelo despache un `toolId` fuera de `AuraToolCatalog.allowedIds`
+- Conseguir que un `target` generado por el modelo llegue a `su -c` sin pasar por `RootCommandPolicy`
+- Bypass de `TargetValidator` (host, IP, puerto o texto libre)
+- Exfiltración de telemetría identificable pese a `TelemetryRedactor` (IPs privadas, MACs, correos,
+  JWT, tokens)
+- Prompt injection en el texto del usuario que altere el comportamiento de Aura
+- Fuga de la API key desde `EncryptedSharedPreferences`, logs o backups
+
+Fuera de alcance:
+
+- Que el modelo alucine texto en el informe: el riesgo está acotado a la redacción, no a la ejecución
+- Que un proveedor externo registre lo que recibe (se avisa en la app antes de activarlo)

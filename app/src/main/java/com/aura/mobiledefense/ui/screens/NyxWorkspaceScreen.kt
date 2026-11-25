@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aura.mobiledefense.data.model.WorkspaceUiState
 import com.aura.mobiledefense.ui.components.BlackConversationalPanel
 import com.aura.mobiledefense.ui.components.GenerativeVisualCanvas
+import com.aura.mobiledefense.ui.components.LlmSettingsOverlay
 import com.aura.mobiledefense.ui.components.MemoryTimelineOverlay
 import com.aura.mobiledefense.ui.components.NeuralPromptBar
 import com.aura.mobiledefense.ui.components.NodeDeepDiveOverlay
@@ -58,6 +59,9 @@ fun NyxWorkspaceScreen(
     val systemLoad by viewModel.systemLoad.collectAsStateWithLifecycle()
     val vpnTelemetry by viewModel.vpnTelemetry.collectAsStateWithLifecycle()
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
+    val showLlmSettings by viewModel.showLlmSettings.collectAsStateWithLifecycle()
+    val llmSettings by viewModel.llmSettings.collectAsStateWithLifecycle()
+    val llmStatus by viewModel.llmStatus.collectAsStateWithLifecycle()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -145,6 +149,7 @@ fun NyxWorkspaceScreen(
                 monitorBanner = monitorBanner,
                 onSwitchPrivilegeMode = { next -> viewModel.switchPrivilegeMode(next) },
                 onToggleEngineMode = { nextEngine -> viewModel.switchEngineMode(nextEngine) },
+                onOpenLlmSettings = { viewModel.setLlmSettingsVisible(true) },
                 onPullDownMemory = { viewModel.setMemoryOverlayVisible(true) },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
@@ -223,7 +228,23 @@ fun NyxWorkspaceScreen(
             }
         }
 
-        // 7. Local Forensic Memory, Monitored Servers & Anomaly Timeline
+        // 7. LLM engine configuration (BYOK) — /ia
+        AnimatedVisibility(
+            visible = showLlmSettings,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 }
+        ) {
+            LlmSettingsOverlay(
+                settings = llmSettings,
+                status = llmStatus,
+                onUpdate = { transform -> viewModel.updateLlmSettings(transform) },
+                onTestConnection = { viewModel.testLlmConnection() },
+                onClearKey = { viewModel.clearLlmKey() },
+                onDismiss = { viewModel.setLlmSettingsVisible(false) }
+            )
+        }
+
+        // 8. Local Forensic Memory, Monitored Servers & Anomaly Timeline
         AnimatedVisibility(
             visible = showMemory,
             enter = fadeIn() + slideInVertically { -it / 2 },

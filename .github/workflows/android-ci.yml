@@ -41,6 +41,17 @@ jobs:
 
       # debug.keystore está en .gitignore (nunca debe versionarse), pero signingConfigs.debugConfig
       # lo referencia. En CI se genera el keystore estándar de depuración de Android.
+      # Guardrail estático: ningún módulo fuera de `domain/security` puede abrir un shell por su
+      # cuenta. El LLM propone herramientas, no comandos, y esta comprobación lo mantiene así.
+      - name: Shell execution guard
+        run: |
+          hits=$(grep -rn "ProcessBuilder(" app/src/main/java --include=*.kt \
+            | grep -v "domain/security/" || true)
+          if [ -n "$hits" ]; then
+            echo "::error title=ProcessBuilder fuera de domain/security::$hits"
+            exit 1
+          fi
+
       - name: Generate debug keystore
         run: |
           if [ ! -f debug.keystore ]; then

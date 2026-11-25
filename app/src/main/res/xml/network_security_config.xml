@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Aura audita cleartext ajeno; no lo usa. Con `usesCleartextTraffic="false"` y este archivo,
+  ni el motor LLM ni los sondeos pueden degradarse a HTTP en claro sin permiso explícito.
+
+  La única excepción es un endpoint LLM autoalojado en la LAN (Ollama / LM Studio / vLLM), que
+  muchos usuarios sirven en HTTP dentro de su propia red. El usuario lo activa desde /ia y ese
+  tráfico nunca sale de la red local.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Servidores propios en la red local (Ollama, LM Studio, vLLM). -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+    </domain-config>
+</network-security-config>

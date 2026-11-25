@@ -28,6 +28,10 @@ import com.aura.mobiledefense.data.model.VisualTopologyKind
 import com.aura.mobiledefense.data.model.VpnFirewallTelemetry
 import com.aura.mobiledefense.data.model.WorkspaceUiState
 import com.aura.mobiledefense.domain.ai.AuraNeuralAiEngine
+import com.aura.mobiledefense.domain.ai.llm.AuraLlmOrchestrator
+import com.aura.mobiledefense.domain.ai.llm.AuraToolCatalog
+import com.aura.mobiledefense.domain.ai.llm.LlmSettings
+import com.aura.mobiledefense.domain.ai.llm.LlmSettingsStore
 import com.aura.mobiledefense.domain.engines.AppSelfIntegrityEngine
 import com.aura.mobiledefense.domain.engines.BinaryCryptoEngine
 import com.aura.mobiledefense.domain.engines.NetworkForensicsEngine
@@ -79,6 +83,8 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
 
     private val solutionExecutionEngine = SolutionExecutionEngine(application, privilegeEngine)
     private val auraAiEngine = AuraNeuralAiEngine(patchAndReportEngine)
+    private val llmSettingsStore = LlmSettingsStore.get(application)
+    private val llmOrchestrator = AuraLlmOrchestrator(auraAiEngine, llmSettingsStore)
 
     private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -91,7 +97,7 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
     private val _privilegeMode = MutableStateFlow(PrivilegeMode.USERLAND)
     val privilegeMode: StateFlow<PrivilegeMode> = _privilegeMode.asStateFlow()
 
-    private val _engineMode = MutableStateFlow(AiEngineMode.ONLINE_CLOUD)
+    private val _engineMode = MutableStateFlow(AiEngineMode.LOCAL_AUTONOMOUS)
     val engineMode: StateFlow<AiEngineMode> = _engineMode.asStateFlow()
 
     private val _rootState = MutableStateFlow(RootCapabilityState())
@@ -112,6 +118,13 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
     private val _showReportPatchOverlay = MutableStateFlow(false)
     val showReportPatchOverlay: StateFlow<Boolean> = _showReportPatchOverlay.asStateFlow()
 
+    private val _showLlmSettings = MutableStateFlow(false)
+    val showLlmSettings: StateFlow<Boolean> = _showLlmSettings.asStateFlow()
+
+    /** Last LLM routing diagnostic, shown in the settings sheet. */
+    private val _llmStatus = MutableStateFlow("")
+    val llmStatus: StateFlow<String> = _llmStatus.asStateFlow()
+
     private val _activeMonitorBanner = MutableStateFlow<String?>(null)
     val activeMonitorBanner: StateFlow<String?> = _activeMonitorBanner.asStateFlow()
 
@@ -125,6 +138,9 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
     val chatMessages: StateFlow<List<AuraChatMessage>> = _chatMessages.asStateFlow()
 
     val vpnTelemetry: StateFlow<VpnFirewallTelemetry> = VpnFirewallManager.telemetry
+
+    /** LLM configuration (BYOK). Observable so the settings sheet reacts immediately. */
+    val llmSettings: StateFlow<LlmSettings> = llmSettingsStore.settings
 
     private val systemActivityMonitor = SystemActivityMonitor(application)
 
@@ -168,6 +184,12 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun switchEngineMode(mode: AiEngineMode) {
+        if (mode == AiEngineMode.ONLINE_CLOUD && llmSettingsStore.buildProvider() == null) {
+            // No model configured yet: open the BYOK sheet instead of pretending to be online.
+            _llmStatus.value = "Configura una clave o un endpoint para activar el motor LLM."
+            _showLlmSettings.value = true
+            return
+        }
         _engineMode.value = mode
         if (mode == AiEngineMode.LOCAL_AUTONOMOUS) {
             submitQuery("Auditoría de estado en modo local autónomo")
@@ -209,14 +231,17 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                 )
 
                 val classification = auraAiEngine.planExecution("Auditoría inicial integral del sistema y red", mode)
-                val scene = auraAiEngine.synthesizeScene(
+                val scene = llmOrchestrator.synthesize(
                     userQuery = "Auditoría inicial integral del sistema, auto-protección y red",
-                    classification = classification,
+                    resolution = AuraLlmOrchestrator.Resolution(
+                        classification = classification,
+                        source = AuraLlmOrchestrator.ResolutionSource.HEURISTIC
+                    ),
                     toolResult = auditResult,
                     matchedRules = matched,
-                    engineMode = activeEngineMode,
                     knowledgeStats = _knowledgeStats.value,
-                    rootState = cap
+                    rootState = cap,
+                    engineMode = activeEngineMode
                 )
 
                 lastScene = scene
@@ -263,14 +288,17 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                     AiEngineMode.ONLINE_CLOUD
                 }
                 val classification = auraAiEngine.planExecution("Cambio a plano ${targetMode.name}", targetMode)
-                val scene = auraAiEngine.synthesizeScene(
+                val scene = llmOrchestrator.synthesize(
                     userQuery = "Cambio a plano ${targetMode.name}: verificar integridad y capacidades reales",
-                    classification = classification,
+                    resolution = AuraLlmOrchestrator.Resolution(
+                        classification = classification,
+                        source = AuraLlmOrchestrator.ResolutionSource.HEURISTIC
+                    ),
                     toolResult = result,
                     matchedRules = matched,
-                    engineMode = activeEngine,
                     knowledgeStats = _knowledgeStats.value,
-                    rootState = cap
+                    rootState = cap,
+                    engineMode = activeEngine
                 )
                 lastScene = scene
                 sessionRepository.saveScene(scene)
@@ -316,6 +344,10 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                 bootstrapEnvironment()
                 return
             }
+            lower == "/ia" || lower == "/llm" || lower == "/modelo" || lower == "/ai" -> {
+                _showLlmSettings.value = true
+                return
+            }
             lower == "/history" || lower == "/historial" -> {
                 _showMemoryOverlay.value = true
                 return
@@ -346,10 +378,8 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
             _showReportPatchOverlay.value = false
 
             val onlineAvailable = hasNetworkConnectivity()
-            val activeEngine = if (_engineMode.value == AiEngineMode.LOCAL_AUTONOMOUS || !onlineAvailable) {
-                if (!onlineAvailable && _engineMode.value == AiEngineMode.ONLINE_CLOUD) {
-                    _engineMode.value = AiEngineMode.LOCAL_AUTONOMOUS
-                }
+            val llmReady = llmSettingsStore.buildProvider() != null
+            val activeEngine = if (_engineMode.value == AiEngineMode.LOCAL_AUTONOMOUS || (!onlineAvailable && !llmReady)) {
                 AiEngineMode.LOCAL_AUTONOMOUS
             } else {
                 AiEngineMode.ONLINE_CLOUD
@@ -362,7 +392,8 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val activeMode = _privilegeMode.value
-                val classification = auraAiEngine.planExecution(query, activeMode)
+                val resolution = llmOrchestrator.plan(query, activeMode)
+                val classification = resolution.classification
                 val plan = classification.plan
 
                 if (plan.toolId == "EXECUTE_SOLUTIONS") {
@@ -384,7 +415,14 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 _uiState.value = WorkspaceUiState.Analyzing(
-                    phase = "Ejecutando módulo real: ${plan.toolId}…",
+                    phase = when (resolution.source) {
+                        AuraLlmOrchestrator.ResolutionSource.LLM ->
+                            "IA eligiendo herramienta: ${plan.toolId}…"
+                        AuraLlmOrchestrator.ResolutionSource.SLASH_COMMAND ->
+                            "Ejecutando comando: ${plan.toolId}…"
+                        AuraLlmOrchestrator.ResolutionSource.HEURISTIC ->
+                            "Ejecutando módulo real: ${plan.toolId}…"
+                    },
                     previousScene = lastScene
                 )
 
@@ -462,14 +500,14 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                     previousScene = lastScene
                 )
 
-                val scene = auraAiEngine.synthesizeScene(
+                val scene = llmOrchestrator.synthesize(
                     userQuery = query,
-                    classification = classification,
+                    resolution = resolution,
                     toolResult = toolResult,
                     matchedRules = matched,
-                    engineMode = activeEngine,
                     knowledgeStats = _knowledgeStats.value,
-                    rootState = _rootState.value
+                    rootState = _rootState.value,
+                    engineMode = activeEngine
                 )
 
                 lastScene = scene
@@ -506,14 +544,17 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                     AiEngineMode.ONLINE_CLOUD
                 }
                 val classification = auraAiEngine.planExecution("Análisis binario ${result.target}", _privilegeMode.value)
-                val scene = auraAiEngine.synthesizeScene(
+                val scene = llmOrchestrator.synthesize(
                     userQuery = "Análisis estático de seguridad y entropía para ${result.target}",
-                    classification = classification,
+                    resolution = AuraLlmOrchestrator.Resolution(
+                        classification = classification,
+                        source = AuraLlmOrchestrator.ResolutionSource.HEURISTIC
+                    ),
                     toolResult = result,
                     matchedRules = matched,
-                    engineMode = activeEngine,
                     knowledgeStats = _knowledgeStats.value,
-                    rootState = _rootState.value
+                    rootState = _rootState.value,
+                    engineMode = activeEngine
                 )
                 lastScene = scene
                 sessionRepository.saveScene(scene)
@@ -673,6 +714,56 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setReportPatchOverlayVisible(visible: Boolean) {
         _showReportPatchOverlay.value = visible
+    }
+
+    fun setLlmSettingsVisible(visible: Boolean) {
+        _showLlmSettings.value = visible
+    }
+
+    // ── LLM settings (BYOK) ──────────────────────────────────────────────────────────────────
+
+    fun updateLlmSettings(transform: (LlmSettings) -> LlmSettings) {
+        llmSettingsStore.update(transform)
+        syncEngineModeWithLlm()
+    }
+
+    fun acceptCloudConsent() = updateLlmSettings { it.copy(cloudConsentGiven = true) }
+
+    fun clearLlmKey() {
+        llmSettingsStore.clearKey()
+        _llmStatus.value = "Clave eliminada. Aura vuelve al motor heurístico local."
+        syncEngineModeWithLlm()
+    }
+
+    /** Sends a tiny probe to the configured model and reports what came back. */
+    fun testLlmConnection() {
+        viewModelScope.launch {
+            val settings = llmSettingsStore.settings.value
+            val provider = llmSettingsStore.buildProvider(settings)
+            if (provider == null) {
+                _llmStatus.value = "Sin configuración válida: revisa clave, modelo y endpoint."
+                return@launch
+            }
+            _llmStatus.value = "Probando ${provider.displayName}…"
+            val reply = runCatching {
+                provider.complete(
+                    system = "Responde solo con la palabra OK.",
+                    user = "ping",
+                    jsonMode = false,
+                    maxTokens = 16
+                )
+            }.getOrNull()
+            _llmStatus.value = if (reply != null) {
+                "Conexión correcta con ${provider.displayName}: ${reply.take(60)}"
+            } else {
+                "El modelo no respondió. Revisa la clave, el endpoint o tu conexión."
+            }
+        }
+    }
+
+    private fun syncEngineModeWithLlm() {
+        val settings = llmSettingsStore.settings.value
+        _engineMode.value = llmSettingsStore.engineModeFor(settings)
     }
 
     fun restoreSession(scene: AiVisualScene) {

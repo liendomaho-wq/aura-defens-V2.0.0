@@ -39,6 +39,16 @@ class AuraNeuralAiEngine(
     private var lastTarget: String = ""
     private var lastSceneSnapshot: AiVisualScene? = null
 
+    /**
+     * Replaces the templated narrative with text produced by the LLM backend (see
+     * `domain.ai.llm.LlmNarrativeWriter`). Everything else in the scene — nodes, edges, strata,
+     * severity, patches, report — stays exactly as measured. Passing null keeps the template.
+     */
+    fun withNarrative(scene: AiVisualScene, llmNarrative: String?): AiVisualScene {
+        if (llmNarrative.isNullOrBlank()) return scene
+        return scene.copy(narrative = llmNarrative)
+    }
+
     fun planExecution(
         userQuery: String,
         currentMode: PrivilegeMode

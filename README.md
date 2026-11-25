@@ -20,13 +20,62 @@ que **ejecuta acciones reales** (nunca simuladas) y devuelve informes con parche
 | Superficie de apps | Componentes exportados, `debuggable`, `allowBackup`, cleartext, firma SHA-256 por paquete |
 | **VPN local + firewall** | `VpnService` real: TUN `10.8.0.2/32`, DNS virtual en `10.8.0.1`, respuestas NXDOMAIN construidas a nivel de wire, rutas `/32` para IPs bloqueadas |
 | Base de amenazas | Reglas locales + feed **CISA KEV** (JSON oficial) con correlación sobre la telemetría |
-| Motor conversacional | Clasificador de intenciones con pesos + softmax, memoria de contexto y síntesis de narrativa/parches en Kotlin |
+| Motor conversacional | **LLM real (BYOK)**: Gemini, OpenAI/Groq/DeepSeek/Mistral o un servidor propio (Ollama/LM Studio), conectado a las 20 funciones de la app. Sin clave, cae al clasificador heurístico local |
 
-## Qué NO es
+## Motor IA (LLM)
 
-- **No es una IA generativa en la nube.** `NeuralIntentClassifier` es un clasificador de reglas con
-  pesos ajustados a mano. No hay llamadas a Gemini, OpenAI ni ningún LLM. El nombre "red neuronal"
-  describe la visualización, no el modelo.
+Aura tiene dos cerebros intercambiables y elige el mejor disponible en cada momento:
+
+| | Motor heurístico (siempre presente) | Motor LLM (opcional, BYOK) |
+|---|---|---|
+| Decide la herramienta | `NeuralIntentClassifier` (reglas + pesos, softmax) | LLM con salida JSON validada contra el catálogo |
+| Redacta el informe | Plantillas por `toolId` | LLM anclado a la telemetría medida |
+| Offline | Sí | Sí, si el endpoint es local (Ollama/LM Studio) |
+| Coste | 0 | El de tu proveedor (céntimos por consulta) |
+
+### Cómo conectarlo
+
+1. Escribe `/ia` en el panel (o toca el ⚙ junto a "AURA IA").
+2. Elige proveedor y modelo:
+   - **Gemini** — clave de [AI Studio](https://aistudio.google.com/apikey), `gemini-2.5-flash` por defecto.
+   - **OpenAI / compatible** — OpenAI, Groq, DeepSeek, Mistral, o un endpoint propio.
+   - **Ollama / LM Studio** — `http://<ip-de-tu-pc>:11434/v1`, sin clave, 100 % en tu red.
+3. Pulsa **Probar conexión**. Si responde, el indicador superior pasa a `AURA IA · LLM ON`.
+
+La clave se guarda en `EncryptedSharedPreferences` (AndroidKeyStore, AES256-GCM). **Nunca** va en el
+APK ni en el repositorio, y no se registra en logs.
+
+### Las 20 funciones conectadas
+
+El LLM no ejecuta nada por sí mismo: elige un `toolId` de un catálogo cerrado
+(`domain/ai/llm/AuraToolCatalog.kt`) y Aura valida el id y el objetivo antes de despachar:
+
+`FULL_AUTONOMOUS_AUDIT` · `SERVER_MONITOR` · `SELF_TRAIN_KEV` · `SELF_INTEGRITY` · `DEVICE_INTEGRITY` ·
+`NETWORK_SOCKETS` · `PORT_PROBE` · `TLS_INSPECT` · `DNS_RECON` · `HTTP_HEADERS` · `APP_SURFACE_AUDIT` ·
+`CRYPTO_JWT` · `ROOT_SHELL` · `VPN_START` · `VPN_STOP` · `VPN_TELEMETRY` · `FIREWALL_BLOCK` ·
+`FIREWALL_ALLOW` · `EXECUTE_SOLUTIONS` · `AI_THEORETICAL`
+
+Los comandos con `/` **nunca** pasan por el modelo: son deterministas por diseño.
+
+### Cómo se evita que la IA sea un riesgo
+
+| Riesgo | Mitigación |
+|---|---|
+| El modelo propone una herramienta inexistente | `AuraToolCatalog.allowedIds`; si no está, fallback heurístico |
+| El modelo devuelve un objetivo con `;` o `$( )` | `TargetValidator` antes de tocar cualquier engine |
+| El modelo intenta subir privilegios | `prefersRoot` solo se honra si el usuario ya está en ROOT; `RootCommandPolicy` sigue siendo la puerta final |
+| Prompt injection en el texto del usuario | escaneo de marcadores; si hay sospecha, no se llama al modelo |
+| El proveedor cae o tarda | timeout + `null` → plantillas heurísticas; la app nunca queda vacía |
+| Telemetría identificable saliendo del teléfono | `TelemetryRedactor`: IPs privadas, MACs, correos, JWT y tokens sustituidos por marcadores estables antes de enviar |
+
+### Qué NO es
+
+- **No entrena un modelo.** El LLM es un modelo ya entrenado que se usa en inferencia; lo que Aura
+  aporta es el *prompt de ciberdefensa* (`AuraSystemPrompt`), el catálogo cerrado de herramientas y
+  el anclaje a telemetría real. No hay fine-tuning ni pesos propios.
+- **No hay IA generativa sin clave.** Sin proveedor configurado, el "cerebro" es el clasificador
+  heurístico: reglas con pesos ajustados a mano. El nombre "red neuronal" describe la
+  visualización, no el modelo.
 - **No es un antivirus.** No hay motor de firmas de malware ni escaneo de contenido de APKs.
 - **No hace "hacking" remoto.** Solo inspección pasiva y sondeos TCP/TLS autorizados por el usuario.
 - **No sustituye a un EDR.** Sin root, las capacidades de contención se limitan al túnel VPN propio.
@@ -87,6 +136,7 @@ desliza ↓ para el historial forense) y un panel conversacional negro.
 /integrity           Autoverificación anti-manipulación
 /env                 Postura de kernel y dispositivo
 /su <comando>        Inspección shell (sujeta a política, ver abajo)
+/ia                  Configurar el motor LLM (BYOK)
 ```
 
 También acepta lenguaje natural en español ("audita todo", "bloquea doubleclick.net",
@@ -123,8 +173,9 @@ root no se puede tocar `iptables` del sistema; con root, la app solo aplica las 
   sin telemetría propia.
 - `android:allowBackup="false"` y reglas de extracción que excluyen todo: la evidencia no sale del
   dispositivo, ni por backup en la nube ni por transferencia entre dispositivos.
-- Únicas salidas de red: el feed `cisa.gov` (KEV), `dns.google` (DoH opcional) y los hosts que tú
-  ordenes auditar. La base de datos **no está cifrada** en reposo (ver roadmap).
+- Únicas salidas de red: el feed `cisa.gov` (KEV), `dns.google` (DoH opcional), los hosts que tú
+  ordenes auditar y —solo si activas el motor LLM— el proveedor que elijas, con la telemetría ya
+  redactada. La base de datos **no está cifrada** en reposo (ver roadmap).
 
 ## Estructura
 
@@ -153,7 +204,8 @@ app/src/main/java/com/aura/mobiledefense/
 - [ ] Partir `NyxViewModel` (722 líneas) y los canvas de UI en módulos más pequeños
 - [ ] Cobertura de tests para los engines que tocan el sistema
 - [ ] `applicationId` propio (hoy sigue siendo el de AI Studio: `com.aistudio.nyxcore.xkpqvr`)
-- [ ] Decidir si el modo "IA Online" implementa un LLM o se renombra
+- [x] Modo "IA Online" implementado como LLM real (BYOK) con catálogo cerrado de herramientas
+- [ ] Modelo on-device real (Gemini Nano / MediaPipe) en la ranura `OnDeviceProvider`
 
 ## Aviso legal
 
