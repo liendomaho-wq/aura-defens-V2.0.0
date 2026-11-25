@@ -12,9 +12,9 @@ import com.aura.mobiledefense.data.model.RootCapabilityState
 import com.aura.mobiledefense.data.model.ToolExecutionResult
 import com.aura.mobiledefense.data.model.VisualTopologyKind
 import com.aura.mobiledefense.domain.security.RootCommandPolicy
+import com.aura.mobiledefense.domain.security.ShellRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.security.KeyFactory
 import java.security.KeyStore
@@ -314,26 +314,17 @@ class PrivilegeAndDeviceEngine(private val context: Context) {
 
     data class ShellOutput(val exitCode: Int, val stdout: String, val stderr: String)
 
+    // Todo proceso pasa por ShellRunner: evalúa RootCommandPolicy y mata el proceso al vencer el
+    // timeout. Antes se creaba con ProcessBuilder directamente y readText() podía colgarse.
     private suspend fun runSuCommand(cmd: String, timeoutMs: Long): ShellOutput =
-        execProcess(listOf("su", "-c", cmd), timeoutMs)
+        ShellRunner.run(cmd, elevated = true, timeoutMs = timeoutMs).toShellOutput()
 
     private suspend fun runCommand(cmd: String, timeoutMs: Long): ShellOutput =
-        execProcess(listOf("sh", "-c", cmd), timeoutMs)
+        ShellRunner.run(cmd, elevated = false, timeoutMs = timeoutMs).toShellOutput()
 
-    private suspend fun execProcess(argv: List<String>, timeoutMs: Long): ShellOutput {
-        val result = withTimeoutOrNull(timeoutMs) {
-            try {
-                val process = ProcessBuilder(argv)
-                    .redirectErrorStream(false)
-                    .start()
-                val stdout = process.inputStream.bufferedReader().use { it.readText() }
-                val stderr = process.errorStream.bufferedReader().use { it.readText() }
-                val exit = process.waitFor()
-                ShellOutput(exit, stdout, stderr)
-            } catch (e: Exception) {
-                ShellOutput(-1, "", e.message ?: e.javaClass.simpleName)
-            }
-        }
-        return result ?: ShellOutput(-2, "", "Timeout tras ${timeoutMs}ms")
-    }
+    private fun ShellRunner.Output.toShellOutput() = ShellOutput(
+        exitCode = exitCode,
+        stdout = stdout,
+        stderr = stderr.ifBlank { blockedReason ?: if (timedOut) "Timeout" else "" }
+    )
 }

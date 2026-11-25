@@ -84,6 +84,39 @@ object RootCommandPolicy {
         "-exec", "--exec", "-delete", "-ok", "run-as", "base64 -d"
     )
 
+    /**
+     * Acciones de `find` que escriben en disco. `-fprint`, `-fprintf` y `-fls` crean ficheros y
+     * `-execdir` / `-okdir` ejecutan binarios: la regla 3 los prohíbe igual que `-exec`/`-delete`.
+     * Antes solo se miraban `-exec` y `-delete`, así que `find / -fprint /sdcard/x` pasaba.
+     */
+    private val findWriteActions = listOf(
+        "-fprint", "-fprint0", "-fprintf", "-fls", "-delete", "-exec", "-execdir", "-ok", "-okdir"
+    )
+
+    /** Lo que cada motor le pide al kernel con root. Si no está aquí, no se ejecuta. */
+    private val trustedInternalCommands = setOf(
+        // NetworkForensicsEngine: sockets, vecinos ARP e iptables en modo lectura
+        "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; " +
+            "ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null | head -n 25",
+        // BinaryCryptoEngine: inventario de paquetes de terceros
+        "pm list packages -3 -f | head -n 25",
+        // PrivilegeAndDeviceEngine: sondeo de root y auditoría del kernel
+        "id && getenforce 2>/dev/null",
+        "id && getenforce && uname -a && ps -A -Z | head -n 25",
+        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null) | head -n 20; " +
+            "echo '---MOUNTS---'; mount | head -n 18; echo '---PROCS---'; ps -A -Z 2>/dev/null | head -n 20"
+    )
+
+    /**
+     * Rutas del sistema que un comando de inspección no necesita leer ni escribir en crudo.
+     * `/proc` y `/sys` quedan fuera a propósito: son la fuente real de la telemetría de Aura.
+     */
+    private val protectedPathPrefixes = listOf(
+        "/system", "/vendor", "/product", "/oem", "/data/adb", "/data/system",
+        "/data/data", "/data/misc", "/sbin", "/init.rc", "/dev/block", "/dev/mem",
+        "/dev/kmem", "/dev/port", "/proc/kcore", "/proc/sysrq-trigger", "/proc/sys/kernel"
+    )
+
     private val pipelineSeparators = Regex("(\\|\\||&&|;|\\|)")
 
     fun evaluate(rawCommand: String, elevated: Boolean): Decision {
@@ -99,6 +132,12 @@ object RootCommandPolicy {
         }
 
         val normalized = raw.lowercase().split(Regex("\\s+")).joinToString(" ")
+
+        // Comandos internos firmados por Aura: se comparan normalizados y literalmente, así que
+        // un usuario no puede reutilizarlos con texto propio.
+        if (trustedInternalCommands.contains(normalized)) {
+            return Decision.Allowed(raw, elevated, readOnly = true)
+        }
 
         // Whitelisted Aura mitigations (literal match) run even when elevate=true.
         if (mitigationTemplates.contains(normalized)) {
@@ -117,6 +156,15 @@ object RootCommandPolicy {
             return Decision.Denied("Secuencia prohibida por la política de privilegios: '$it'.")
         }
 
+        protectedPathPrefixes.firstOrNull { prefix ->
+            raw.contains("$prefix/") || raw.endsWith(prefix)
+        }?.let { prefix ->
+            return Decision.Denied(
+                "Ruta protegida por la política de privilegios: '$prefix'. " +
+                    "Aura no lee ni escribe ahí, ni siquiera con root."
+            )
+        }
+
         val segments = raw.split(pipelineSeparators).map { it.trim() }.filter { it.isNotBlank() }
         if (segments.isEmpty()) {
             return Decision.Denied("No se detectó ningún ejecutable válido.")
@@ -133,10 +181,32 @@ object RootCommandPolicy {
                     "El binario '$binary' no está permitido: Aura solo ejecuta inspecciones de lectura y mitigaciones verificadas."
                 )
             }
+            // Regla 3: ninguna ruta protegida, ni como argumento ni tras redirección.
+            protectedPathPrefixes.firstOrNull { prefix ->
+                tokens.drop(1).any { token ->
+                    val candidate = token.substringAfter("=", token).trim('"', '\'')
+                    candidate == prefix || candidate.startsWith(prefix + "/")
+                }
+            }?.let { prefix ->
+                return Decision.Denied(
+                    "Ruta protegida por la política de privilegios: '$prefix'. " +
+                        "Aura no lee ni escribe ahí, ni siquiera con root."
+                )
+            }
+
             when {
                 readOnlyBinaries.contains(binary) -> {
-                    if (binary == "find" && tokens.any { it.startsWith("-exec") || it == "-delete" }) {
-                        return Decision.Denied("'find' con -exec/-delete está bloqueado.")
+                    if (binary == "find") {
+                        val writeAction = tokens.firstOrNull { token ->
+                            val flag = token.substringBefore("=")
+                            findWriteActions.any { flag == it || flag.startsWith("$it ") }
+                        }
+                        if (writeAction != null) {
+                            return Decision.Denied(
+                                "'find' con '${writeAction.substringBefore("=")}' está bloqueado: " +
+                                    "crea ficheros o ejecuta binarios."
+                            )
+                        }
                     }
                     if (binary == "echo" || binary == "printf") {
                         // Nothing to validate: echo without redirection cannot mutate state.

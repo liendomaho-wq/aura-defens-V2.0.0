@@ -45,10 +45,19 @@ jobs:
       # cuenta. El LLM propone herramientas, no comandos, y esta comprobación lo mantiene así.
       - name: Shell execution guard
         run: |
+          # 1. Ningún módulo fuera de domain/security puede crear procesos.
           hits=$(grep -rn "ProcessBuilder(" app/src/main/java --include=*.kt \
             | grep -v "domain/security/" || true)
           if [ -n "$hits" ]; then
             echo "::error title=ProcessBuilder fuera de domain/security::$hits"
+            exit 1
+          fi
+          # 2. Y nadie puede invocar su/su -c/sh -c saltándose ShellRunner (que aplica
+          #    RootCommandPolicy). Antes había tres motores que lo hacían.
+          bypass=$(grep -rn 'ProcessBuilder(\|Runtime.getRuntime().exec' app/src/main/java --include=*.kt \
+            | grep -v "domain/security/ShellRunner.kt" || true)
+          if [ -n "$bypass" ]; then
+            echo "::error title=Shell directo fuera de ShellRunner::$bypass"
             exit 1
           fi
 

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.Base64
 import com.aura.mobiledefense.data.model.PrivilegeMode
+import com.aura.mobiledefense.domain.security.ShellRunner
 import com.aura.mobiledefense.data.model.ToolExecutionResult
 import com.aura.mobiledefense.data.model.VisualTopologyKind
 import kotlinx.coroutines.Dispatchers
@@ -107,12 +108,13 @@ class BinaryCryptoEngine(private val context: Context) {
         if (mode == PrivilegeMode.ROOT) {
             sb.appendLine()
             sb.appendLine("=== INVENTARIO DE PAQUETES DE TERCEROS (su) ===")
-            val suPkgs = runCatching {
-                val p = ProcessBuilder("su", "-c", "pm list packages -3 -f | head -n 25").start()
-                val out = p.inputStream.bufferedReader().use { it.readText() }
-                p.waitFor()
-                out.ifBlank { "(sin salida de pm list packages)" }
-            }.getOrElse { "su no disponible: ${it.message}" }
+            // Todo shell pasa por ShellRunner, que evalúa RootCommandPolicy antes de crear el
+            // proceso. Antes esta llamada iba directo a `su -c`, saltándose la política.
+            val suPkgs = ShellRunner.run(
+                command = "pm list packages -3 -f | head -n 25",
+                elevated = true,
+                timeoutMs = 5000L
+            ).combined.ifBlank { "(sin salida de pm list packages)" }
             sb.appendLine(suPkgs.take(3000))
         }
 

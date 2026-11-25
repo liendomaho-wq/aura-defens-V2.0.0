@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.aura.mobiledefense.data.model.PrivilegeMode
+import com.aura.mobiledefense.domain.security.ShellRunner
 import com.aura.mobiledefense.data.model.ToolExecutionResult
 import com.aura.mobiledefense.data.model.VisualTopologyKind
 import kotlinx.coroutines.Dispatchers
@@ -127,9 +128,11 @@ class NetworkForensicsEngine(private val context: Context) {
             if (mode == PrivilegeMode.ROOT) {
                 sb.appendLine()
                 sb.appendLine("=== AUDITORÍA KERNEL DE SOCKETS Y NETFILTER (su) ===")
-                val suNet = runSuShell(
-                    "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null | head -n 25"
-                )
+                val suNet = ShellRunner.run(
+                    command = "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null | head -n 25",
+                    elevated = true,
+                    timeoutMs = 7000L
+                ).combined.ifBlank { "Sin salida de la inspección kernel." }
                 sb.appendLine(suNet)
             }
 
@@ -502,21 +505,6 @@ class NetworkForensicsEngine(private val context: Context) {
         if (f.exists() && f.canRead()) f.readText() else null
     } catch (_: Exception) {
         null
-    }
-
-    private suspend fun runSuShell(cmd: String): String {
-        val res = withTimeoutOrNull(7000L) {
-            try {
-                val p = ProcessBuilder("su", "-c", cmd).start()
-                val out = p.inputStream.bufferedReader().use { it.readText() }
-                val err = p.errorStream.bufferedReader().use { it.readText() }
-                p.waitFor()
-                if (out.isNotBlank()) out.take(5000) else "STDERR: ${err.take(500)}"
-            } catch (e: Exception) {
-                "Error su: ${e.message}"
-            }
-        }
-        return res ?: "Timeout su"
     }
 
     private data class PortProbeEntry(
