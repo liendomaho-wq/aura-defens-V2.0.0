@@ -99,6 +99,64 @@ object PacketCodec {
     }
 
     /**
+     * Extrae las IPs de las respuestas A/AAAA de una respuesta DNS (soporta compresión de nombres).
+     * Se usa para aprender dominio→IP y poder cortar ese dominio en el túnel.
+     */
+    fun extractDnsAnswerIps(response: ByteArray): List<String> {
+        if (response.size < 12) return emptyList()
+        val qdCount = u16(response, 4)
+        val anCount = u16(response, 6)
+        if (anCount == 0) return emptyList()
+        var idx = 12
+        repeat(qdCount) {
+            val skipped = skipDnsName(response, idx) ?: return emptyList()
+            idx = skipped + 4 // QTYPE + QCLASS
+        }
+        val ips = mutableListOf<String>()
+        repeat(anCount) {
+            val afterName = skipDnsName(response, idx) ?: return ips
+            if (afterName + 10 > response.size) return ips
+            val type = u16(response, afterName)
+            val rdLength = u16(response, afterName + 8)
+            val rdStart = afterName + 10
+            if (rdStart + rdLength > response.size) return ips
+            when (type) {
+                1 -> if (rdLength == 4) {
+                    ips.add(formatIpv4(response.copyOfRange(rdStart, rdStart + 4)))
+                }
+                28 -> if (rdLength == 16) {
+                    ips.add(formatIpv6(response.copyOfRange(rdStart, rdStart + 16)))
+                }
+            }
+            idx = rdStart + rdLength
+        }
+        return ips.distinct()
+    }
+
+    /** Salta un nombre DNS (con punteros de compresión) y devuelve el offset del byte siguiente. */
+    private fun skipDnsName(buf: ByteArray, start: Int): Int? {
+        var idx = start
+        var guard = 0
+        while (idx < buf.size && guard++ < 128) {
+            val len = buf[idx].toInt() and 0xFF
+            if (len == 0) return idx + 1
+            if ((len and 0xC0) == 0xC0) return idx + 2 // puntero: 2 bytes y fin del nombre
+            idx += 1 + len
+        }
+        return null
+    }
+
+    private fun formatIpv6(bytes: ByteArray): String {
+        val groups = (0 until 8).map { i ->
+            ((bytes[i * 2].toInt() and 0xFF) shl 8) or (bytes[i * 2 + 1].toInt() and 0xFF)
+        }
+        return groups.joinToString(":") { Integer.toHexString(it) }
+    }
+
+    private fun u16(b: ByteArray, i: Int): Int =
+        ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF)
+
+    /**
      * Builds a valid DNS NXDOMAIN (RCODE=3) response payload for a blocked domain query.
      */
     fun buildDnsNxDomainResponse(queryPayload: ByteArray): ByteArray {

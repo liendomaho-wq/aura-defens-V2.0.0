@@ -23,6 +23,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -136,10 +138,12 @@ class AuraLocalVpnService : VpnService() {
                     .addDnsServer(VIRTUAL_DNS_IP)
                     .addRoute(VIRTUAL_DNS_IP, 32)
 
-                // Route firewall-blocked IPv4 targets directly into TUN to drop & log real packets
-                VpnFirewallManager.getBlockedIpRoutes().forEach { blockedIp ->
-                    runCatching { builder.addRoute(blockedIp, 32) }
-                }
+                // Ruta completa: sin esto el TUN solo ve las IPs ya bloqueadas (un sinkhole) y
+                // bloquear un dominio o un puerto no tendría efecto sobre el tráfico real.
+                // Con 0.0.0.0/0 todo el tráfico pasa por el proxy de sockets, que aplica las
+                // reglas del firewall paquete a paquete.
+                runCatching { builder.addRoute("0.0.0.0", 0) }
+                runCatching { builder.addRoute("::", 0) }
 
                 // Prevent Aura itself from looping inside the VPN
                 runCatching { builder.addDisallowedApplication(packageName) }
@@ -175,8 +179,40 @@ class AuraLocalVpnService : VpnService() {
                         serviceScope.launch {
                             handleDnsPacket(packetCopy, parsed, output)
                         }
+                    } else if (parsed.protocol == PacketCodec.PROTO_TCP) {
+                        // 2. TCP: proxy transparente. Decide con las reglas reales (IP, puerto y,
+                        //    en cuanto aparece, el dominio del SNI) y corta con RST lo que se bloquea.
+                        val handled = TcpProxyEngine.handleFromDevice(
+                            parsed = parsed,
+                            packet = packetCopy,
+                            transport = tcpTransport,
+                            onBlocked = { reason ->
+                                VpnFirewallManager.recordPacketEvent(
+                                    protocol = "TCP",
+                                    destination = "${parsed.dstIpString}:${parsed.dstPort}",
+                                    port = parsed.dstPort,
+                                    action = FirewallPacketEventAction.BLOCKED,
+                                    reason = reason,
+                                    bytesInDelta = readLen.toLong(),
+                                    bytesOutDelta = 0L
+                                )
+                            },
+                            onSni = { host ->
+                                VpnFirewallManager.recordObservedDomain(host, parsed.dstIpString)
+                            }
+                        )
+                        if (handled) continue
+                        VpnFirewallManager.recordPacketEvent(
+                            protocol = "TCP",
+                            destination = parsed.dstIpString,
+                            port = parsed.dstPort,
+                            action = FirewallPacketEventAction.ALLOWED,
+                            reason = "Proxy TCP activo",
+                            bytesInDelta = readLen.toLong(),
+                            bytesOutDelta = 0L
+                        )
                     } else {
-                        // 2. Any other packet hitting TUN came from a firewall-blocked IP route -> drop & log!
+                        // 3. UDP e ICMP: firewall por IP/puerto (DNS ya se atendió arriba).
                         val decision = VpnFirewallManager.evaluatePacketRoute(parsed.dstIpString, parsed.dstPort)
                         val protoName = when (parsed.protocol) {
                             PacketCodec.PROTO_TCP -> "TCP"
@@ -241,6 +277,12 @@ class AuraLocalVpnService : VpnService() {
         val rtt = (System.currentTimeMillis() - startMs).coerceAtLeast(1L)
 
         if (upstreamResponse != null) {
+            // Aprendemos dominio→IP: si este dominio se bloquea, sus IPs se cortan en el túnel
+            // aunque la app resuelva por su cuenta o la respuesta venga de caché.
+            val resolvedIps = PacketCodec.extractDnsAnswerIps(upstreamResponse)
+            if (resolvedIps.isNotEmpty()) {
+                DomainSinkhole.rememberResolution(domain, resolvedIps, blocked = false)
+            }
             val replyPacket = PacketCodec.buildIpv4UdpPacket(
                 srcIp = parsed.dstIp,
                 dstIp = parsed.srcIp,
@@ -260,6 +302,22 @@ class AuraLocalVpnService : VpnService() {
                 rttMs = rtt
             )
         }
+    }
+
+    /** Conexiones reales del proxy, siempre fuera del túnel para no entrar en bucle. */
+    private val tcpTransport = object : TcpProxyEngine.Transport {
+        override fun connect(dstIp: String, dstPort: Int, timeoutMs: Int): Socket? = runCatching {
+            val socket = Socket()
+            if (!protect(socket)) {
+                Log.w(TAG, "protect() rechazó el socket hacia $dstIp:$dstPort")
+                socket.close()
+                return@runCatching null
+            }
+            socket.connect(InetSocketAddress(dstIp, dstPort), timeoutMs)
+            socket.tcpNoDelay = true
+            socket.soTimeout = 0
+            socket
+        }.getOrNull()
     }
 
     private fun forwardDnsUpstream(queryBytes: ByteArray, upstreamIp: String): ByteArray? {
@@ -297,6 +355,7 @@ class AuraLocalVpnService : VpnService() {
     private fun stopTunnel() {
         tunnelJob?.cancel()
         tunnelJob = null
+        TcpProxyEngine.closeAll()
         runCatching { tunInterface?.close() }
         tunInterface = null
         VpnFirewallManager.onVpnStateChanged(false)

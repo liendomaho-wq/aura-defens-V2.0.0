@@ -171,17 +171,53 @@ object VpnFirewallManager {
             .filter { ipv4Regex.matches(it) }
     }
 
+    /**
+     * Dominios de DNS cifrado (DoH/DoT). Si se permite, una app puede saltarse el firewall de
+     * dominios resolviendo por su cuenta. Es una regla de la política, no una ocurrencia del código.
+     */
+    private val encryptedDnsDomains = setOf(
+        "dns.google", "cloudflare-dns.com", "mozilla.cloudflare-dns.com", "dns.quad9.net",
+        "doh.opendns.com", "dns.adguard-dns.com", "dns.nextdns.io", "doh.pub", "dns.alidns.com"
+    )
+
+    @Volatile
+    private var blockEncryptedDns = false
+
+    fun setEncryptedDnsPolicy(blocked: Boolean) {
+        blockEncryptedDns = blocked
+    }
+
+    fun isEncryptedDnsPolicyEnabled(): Boolean = blockEncryptedDns
+
+    fun isEncryptedDnsDomain(domain: String): Boolean =
+        encryptedDnsDomains.any { domain == it || domain.endsWith(".$it") }
+
+    /**
+     * Decide si un dominio se permite. Se usa tanto para el DNS interceptado como para el SNI del
+     * TLS, así que cubre a las apps que resuelven por su cuenta y a los túneles que ignoran el DNS
+     * del sistema.
+     */
     fun evaluateDnsDomain(domain: String): RuleEvaluationDecision {
         val lower = domain.trim().lowercase().trimEnd('.')
         val matched = _rules.value.firstOrNull { rule ->
             rule.enabled && rule.action == "BLOCK" && rule.ruleType == FirewallRuleType.DOMAIN.name &&
                 (lower == rule.pattern || lower.endsWith(".${rule.pattern}"))
         }
-        return if (matched != null) {
-            RuleEvaluationDecision(allowed = false, reason = matched.reason)
-        } else {
-            RuleEvaluationDecision(allowed = true, reason = "DNS permitido")
+        if (matched != null) {
+            return RuleEvaluationDecision(allowed = false, reason = matched.reason)
         }
+        if (blockEncryptedDns && isEncryptedDnsDomain(lower)) {
+            return RuleEvaluationDecision(
+                allowed = false,
+                reason = "DNS cifrado (DoH/DoT) bloqueado: evade el firewall de dominios"
+            )
+        }
+        return RuleEvaluationDecision(allowed = true, reason = "DNS permitido")
+    }
+
+    /** Guarda la asociación dominio→IP observada en el DNS, para poder bloquearla en el túnel. */
+    fun recordObservedDomain(domain: String, ip: String) {
+        DomainSinkhole.rememberResolution(domain, listOf(ip), blocked = !evaluateDnsDomain(domain).allowed)
     }
 
     fun evaluatePacketRoute(dstIp: String, dstPort: Int): RuleEvaluationDecision {
@@ -197,6 +233,10 @@ object VpnFirewallManager {
         }
         if (matchedPort != null) {
             return RuleEvaluationDecision(allowed = false, reason = matchedPort.reason)
+        }
+        val learned = DomainSinkhole.isBlockedIp(dstIp)
+        if (learned.blocked) {
+            return RuleEvaluationDecision(allowed = false, reason = learned.reason)
         }
         return RuleEvaluationDecision(allowed = true, reason = "Tráfico permitido")
     }
