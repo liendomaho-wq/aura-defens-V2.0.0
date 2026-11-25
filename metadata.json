@@ -1,6 +1,6 @@
 {
   "name": "Aura Mobile Defense",
-  "description": "AI-driven cyberdefense platform with interactive non-brain neural network visualization, automated vulnerability auditing, network/server anomaly monitoring, patch generation, online/offline autonomy, and internet threat self-training.",
+  "description": "Plataforma Android de ciberdefensa local: auditoría forense del dispositivo y de endpoints autorizados, VPN local con firewall a nivel de paquete y DNS sinkhole, monitorización de anomalías, parches y motor conversacional heurístico on-device (sin LLM en la nube).",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }
