@@ -25,10 +25,10 @@ abstract class NyxDatabase : RoomDatabase() {
         private var INSTANCE: NyxDatabase? = null
 
         /**
-         * Append every schema bump here. The exported schemas live in `app/schemas/` and the
-         * instrumentation migration tests validate them.
+         * Migraciones reales (ver [AuraMigrations]). Cada subida de `version` debe añadir la suya:
+         * la base guarda evidencia forense y no hay fallback destructivo.
          */
-        private val MIGRATIONS: Array<Migration> = emptyArray()
+        private val MIGRATIONS: Array<Migration> = AuraMigrations.ALL
 
         fun getInstance(context: Context): NyxDatabase {
             val current = INSTANCE
