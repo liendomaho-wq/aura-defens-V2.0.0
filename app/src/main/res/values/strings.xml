@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Aura Mobile Defense</string>
+    <string name="mode_userland_label">SIN ROOT · USERLAND</string>
+    <string name="mode_root_label">CON ROOT · KERNEL</string>
+    <string name="neural_prompt_hint">Conversa en el panel negro, usa /audit /vpn on /block /fix…</string>
+    <string name="horizon_gesture_hint">Desliza ↔ privilegio · ↓ historial · toca nodos</string>
+    <string name="cd_privilege_horizon">Horizonte de control Aura: desliza horizontalmente para modo Sin Root o Con Root, desliza hacia abajo para historial forense</string>
+    <string name="cd_ai_canvas">Red neuronal interactiva de Aura Mobile Defense</string>
+    <string name="cd_neural_input">Entrada conversacional para ejecutar funciones de ciberdefensa con IA</string>
+    <string name="cd_file_drop_zone">Glifo neuronal: toca para rotar comandos, mantén presionado para inspeccionar APK o archivo local</string>
+    <string name="cd_memory_timeline">Historial forense, parches y anomalías locales</string>
+    <string name="cd_node_overlay">Inspección profunda de neurona seleccionada</string>
+</resources>

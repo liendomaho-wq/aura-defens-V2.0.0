@@ -1,0 +1,6 @@
+{
+  "name": "Aura Mobile Defense",
+  "description": "AI-driven cyberdefense platform with interactive non-brain neural network visualization, automated vulnerability auditing, network/server anomaly monitoring, patch generation, online/offline autonomy, and internet threat self-training.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
