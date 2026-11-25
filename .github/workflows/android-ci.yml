@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Permite lanzar la compilación del APK desde cualquier rama a mano.
   workflow_dispatch:
 
 permissions:
