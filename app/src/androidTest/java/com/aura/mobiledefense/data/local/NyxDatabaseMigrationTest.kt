@@ -113,7 +113,8 @@ class NyxDatabaseMigrationTest {
     fun migrate1To2CreatesMonitorTables() = runBlocking {
         val file = createRawDatabase(version = 1)
 
-        openWithRoom().use { db ->
+        val db = openWithRoom()
+        try {
             db.forensicSessionDao().upsertMonitorTarget(
                 MonitorTargetEntity(
                     target = "example.com",
@@ -135,6 +136,8 @@ class NyxDatabaseMigrationTest {
                 "falta el monitor_target",
                 db.forensicSessionDao().getMonitorTarget("example.com")?.target == "example.com"
             )
+        } finally {
+            db.close()
         }
 
         val indices = indexNames(file)
@@ -149,7 +152,8 @@ class NyxDatabaseMigrationTest {
             extraDdl = listOf(monitorTargetsDdl, anomalyEventsDdl)
         )
 
-        openWithRoom().use { db ->
+        val db = openWithRoom()
+        try {
             val dao = db.forensicSessionDao()
             dao.upsertThreatRules(
                 listOf(
@@ -169,6 +173,8 @@ class NyxDatabaseMigrationTest {
             )
             assertTrue("falta la regla CISA KEV", dao.countThreatRules() == 1)
             assertTrue("falta la regla de firewall", dao.countFirewallRules() == 1)
+        } finally {
+            db.close()
         }
 
         val indices = indexNames(file)
@@ -188,7 +194,8 @@ class NyxDatabaseMigrationTest {
             }
         }
 
-        openWithRoom().use { db ->
+        val db = openWithRoom()
+        try {
             val sessions = db.forensicSessionDao().observeSessions().first()
             assertTrue(
                 "la sesión se perdió en la migración",
@@ -202,6 +209,8 @@ class NyxDatabaseMigrationTest {
                 )
             )
             assertTrue(dao.countFirewallRules() == 1)
+        } finally {
+            db.close()
         }
     }
 }
