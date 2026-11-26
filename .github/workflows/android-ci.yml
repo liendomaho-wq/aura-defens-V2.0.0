@@ -197,24 +197,64 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      # AVD + arranque manuales con diagnóstico real: el runner de emulador fallaba en ~1 min
+      # con un genérico "process exited with code 1" y sin logs accesibles. Aquí cada fase
+      # falla con su propio mensaje en anotaciones.
+      - name: Create AVD (diagnosed)
+        run: |
+          set +e
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo 'no' | "${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager" create avd --force \
+            -n aura_avd -k 'system-images;android-31;default;x86_64' --device pixel_5 > avd.log 2>&1
+          status=$?
+          echo "::notice title=avd exit::$status"
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=AVD creation failed::$(tail -c 1800 avd.log | tr '\n' '~' | tr -d '\r')"
+            exit 1
+          fi
+          adb start-server
+
+      - name: Launch emulator & wait (diagnosed)
+        run: |
+          set +e
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          nohup "${ANDROID_HOME}/emulator/emulator" -port 5554 -avd aura_avd \
+            -no-window -no-snapshot -no-boot-anim -no-audio -gpu swiftshader_indirect \
+            > emulator.log 2>&1 &
+          echo "emulator pid $!"
+          adb wait-for-device
+          booted=""
+          for i in $(seq 1 150); do
+            booted=$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            [ "$booted" = "1" ] && break
+            sleep 2
+          done
+          echo "::notice title=boot_completed::${booted:-vacío}"
+          echo "::notice title=emulator.log::$(tail -c 1200 emulator.log | tr '\n' '~' | tr -d '\r')"
+          if [ "$booted" != "1" ]; then
+            echo "::error title=emulator did not boot::timeout 300s esperando boot_completed"
+            exit 1
+          fi
+          adb -s emulator-5554 shell settings put global window_animation_scale 0.0
+          adb -s emulator-5554 shell settings put global transition_animation_scale 0.0
+          adb -s emulator-5554 shell settings put global animator_duration_scale 0.0
+
       - name: Run instrumented tests (SQLCipher + migraciones)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 31
-          target: default
-          arch: x86_64
-          profile: pixel_5
-          disable-animations: true
-          script: |
-            set +e
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace > itest.log 2>&1
-            status=$?
-            if [ "$status" -ne 0 ]; then
-              errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test|Instrumentation)" -A3 itest.log | head -150 | tr "\n" "~" | tr -d "\r")
-              echo "::error title=Instrumented tests failed::${errors}"
-              tail -n 30 itest.log | tr "\n" "~" | tr -d "\r" | sed "s/^/::error title=log tail::/"
-              exit "$status"
-            fi
+        run: |
+          set +e
+          ./gradlew :app:connectedDebugAndroidTest --stacktrace > itest.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test|Instrumentation)" -A3 itest.log | head -150 | tr "\n" "~" | tr -d "\r")
+            echo "::error title=Instrumented tests failed::${errors}"
+            tail -n 30 itest.log | tr "\n" "~" | tr -d "\r" | sed "s/^/::error title=log tail::/"
+            exit "$status"
+          fi
+
+      - name: Stop emulator
+        if: always()
+        run: adb -s emulator-5554 emu kill || true
 
       - name: Upload instrumented reports
         if: always()
