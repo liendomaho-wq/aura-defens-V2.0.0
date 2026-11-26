@@ -156,6 +156,9 @@ dependencies {
   androidTestImplementation(libs.sqlcipher.android)
   // Room 2.6+ ya no necesita esquemas generados para probar migraciones: basta el SQL.
   testImplementation(libs.androidx.room.testing)
+  // MigrationTestHelper vive en room-testing y se usa en androidTest (sourceSets androidTest
+  // también recibe app/schemas como assets).
+  androidTestImplementation(libs.androidx.room.testing)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)
