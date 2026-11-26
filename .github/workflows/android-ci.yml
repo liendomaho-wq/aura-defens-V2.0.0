@@ -18,7 +18,9 @@ jobs:
   build:
     name: Build & unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # La primera ejecución en frío (android-all de Robolectric + build completo) supera el
+    # límite anterior de 40 min; 60 acomoda ambas cosas.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -86,12 +88,32 @@ jobs:
             exit "$status"
           fi
 
-      - name: Unit tests (JVM + Robolectric)
+      # Primero los tests JVM puros (motores VPN, seguridad, LLM): rápidos y sin Robolectric.
+      # Después la suite completa. Así el paso deja de ser una caja negra de 40 minutos.
+      - name: Unit tests - JVM puro (vpn, security, llm)
         if: success()
+        timeout-minutes: 15
+        run: |
+          set +e
+          ./gradlew :app:testDebugUnitTest \
+            --tests "com.aura.mobiledefense.domain.*" \
+            --tests "com.aura.mobiledefense.VpnFirewallRealTest" 2>&1 | tee jvm_tests.log
+          status=${PIPESTATUS[0]}
+          echo "::notice title=jvm pure exit::$status"
+          if [ "$status" -ne 0 ]; then
+            errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test >)" -A2 jvm_tests.log | head -80 | tr '\n' '~' | tr -d '\r')
+            echo "::error title=JVM pure tests failed::${errors}"
+            exit "$status"
+          fi
+
+      - name: Unit tests (suite completa con Robolectric)
+        if: success()
+        timeout-minutes: 40
         run: |
           set +e
           ./gradlew :app:testDebugUnitTest --stacktrace 2>&1 | tee tests.log
           status=${PIPESTATUS[0]}
+          echo "::notice title=full suite exit::$status"
           if [ "$status" -ne 0 ]; then
             errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test >)" -A2 tests.log | head -80 | tr '\n' '~' | tr -d '\r')
             echo "::error title=Unit tests failed::${errors}"
