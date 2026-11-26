@@ -85,7 +85,7 @@ object RootCommandPolicy {
     private val appOwnerRuleRegex =
         Regex("^iptables -(c|i|d) output -m owner --uid-owner ([0-9]{4,8}) -j drop$")
     private val appOwnerRuleCombinedRegex =
-        Regex("^iptables -c output -m owner --uid-owner ([0-9]{4,8}) -j drop 2>/dev/null \|\| iptables -i output -m owner --uid-owner \1 -j drop$")
+        Regex("""^iptables -c output -m owner --uid-owner ([0-9]{4,8}) -j drop 2>/dev/null \|\| iptables -i output -m owner --uid-owner \1 -j drop$""")
 
     private fun isSignedAppOwnerRule(normalized: String): Boolean {
         val uid = appOwnerRuleRegex.matchEntire(normalized)?.groupValues?.get(2)?.toIntOrNull()

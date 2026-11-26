@@ -47,6 +47,7 @@ class LlmGuardrailsTest {
             "HTTP_HEADERS", "APP_SURFACE_AUDIT", "CRYPTO_JWT", "ROOT_SHELL", "VPN_START",
             "VPN_STOP", "VPN_TELEMETRY", "FIREWALL_BLOCK", "FIREWALL_ALLOW",
             "APP_FIREWALL_BLOCK", "APP_FIREWALL_ALLOW", "APP_FIREWALL_LIST",
+            "INTEL_OSV_QUERY", "INTEL_URLHAUS_CHECK",
             "EXECUTE_SOLUTIONS", "AI_THEORETICAL"
         )
         assertEquals(dispatchedInViewModel, AuraToolCatalog.allowedIds)

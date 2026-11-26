@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
  *    [com.aura.mobiledefense.domain.security.RootCommandPolicy] (estructura exacta, cadena, target
  *    y rango de UID), nunca por texto libre.
  *  - **Sin root** Android 10+ no permite a una app corriente atribuir ni cortar el tráfico de OTRA
- *    app: `/proc/net/*` oculta las entradas ajenas y `ConnectivityManager.getConnectionOwnerUid`
+ *    app: `/proc/net/` oculta las entradas ajenas y `ConnectivityManager.getConnectionOwnerUid`
  *    es una API oculta que en muchos dispositivos devuelve -1 o lanza. Aquí solo se expone como
  *    atribución *best-effort* para telemetría forense ([attributeOwnerUidBestEffort]); el bloqueo
  *    real declara honestamente que no está disponible y la regla queda persistida para aplicarse

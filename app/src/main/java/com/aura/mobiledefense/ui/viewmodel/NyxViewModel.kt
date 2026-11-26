@@ -90,6 +90,7 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
     private val selfIntegrityEngine = AppSelfIntegrityEngine(application)
     private val threatKnowledgeEngine = ThreatKnowledgeEngine(dao)
     private val serverMonitorEngine = ServerAndNetworkMonitorEngine(application, dao)
+    private val threatIntelEngine = com.aura.mobiledefense.domain.engines.ThreatIntelEngine()
     private val patchAndReportEngine = PatchAndReportEngine(
         integrityEngine = selfIntegrityEngine,
         privilegeEngine = privilegeEngine,
@@ -565,6 +566,8 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                             suggestedVisual = VisualTopologyKind.ATTACK_VECTOR_FLOW
                         )
                     }
+                    "INTEL_OSV_QUERY" -> threatIntelEngine.checkOsv(plan.target.trim(), effectiveMode)
+                    "INTEL_URLHAUS_CHECK" -> threatIntelEngine.checkUrlhaus(plan.target.trim(), effectiveMode)
                     "FIREWALL_BLOCK" -> {
                         val pattern = plan.target.trim()
                         if (pattern.isNotBlank()) {

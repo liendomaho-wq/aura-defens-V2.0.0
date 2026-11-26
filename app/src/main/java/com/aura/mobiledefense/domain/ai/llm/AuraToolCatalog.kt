@@ -206,6 +206,24 @@ object AuraToolCatalog {
             examples = listOf("qué apps tengo bloqueadas", "lista las apps de terceros")
         ),
         LlmToolSpec(
+            id = "INTEL_OSV_QUERY",
+            dispatch = "checkOsv",
+            requiresTarget = true,
+            targetKind = TargetKind.PATTERN,
+            prefersRoot = false,
+            summary = "Consulta osv.dev: vulnerabilidades conocidas de una versión exacta de paquete. Formato: ecosistema:paquete:versión (Maven admite group:artifact:versión).",
+            examples = listOf("escanea PyPI django 3.2.1 en OSV", "¿npm lodash 4.17.20 es vulnerable?")
+        ),
+        LlmToolSpec(
+            id = "INTEL_URLHAUS_CHECK",
+            dispatch = "checkUrlhaus",
+            requiresTarget = true,
+            targetKind = TargetKind.PATTERN,
+            prefersRoot = false,
+            summary = "Consulta URLhaus (abuse.ch): ¿el dominio/URL es una amenaza conocida de distribución de malware? Un resultado positivo sugiere bloqueo.",
+            examples = listOf("¿es malicioso evil.example según URLhaus?", "comprueba esta URL en urlhaus")
+        ),
+        LlmToolSpec(
             id = "FIREWALL_BLOCK",
             dispatch = "addBlockRule",
             requiresTarget = true,
