@@ -77,6 +77,13 @@ class NyxDatabaseMigrationTest {
         )
     """.trimIndent()
 
+    // Reproduce exactamente lo que MIGRATION_1_2 deja en una base real (tablas e índices).
+    // La entidad AnomalyEventEntity declara esos índices y Room los valida al migrar.
+    private val migration12IndexDdl = listOf(
+        "CREATE INDEX IF NOT EXISTS `index_anomaly_events_target` ON `anomaly_events` (`target`)",
+        "CREATE INDEX IF NOT EXISTS `index_anomaly_events_timestamp` ON `anomaly_events` (`timestamp`)"
+    )
+
     @Before
     fun setUp() {
         context.deleteDatabase(dbName)
@@ -153,7 +160,7 @@ class NyxDatabaseMigrationTest {
     fun migrate2To3CreatesThreatAndFirewallTables() = runBlocking {
         val file = createRawDatabase(
             version = 2,
-            extraDdl = listOf(monitorTargetsDdl, anomalyEventsDdl)
+            extraDdl = listOf(monitorTargetsDdl, anomalyEventsDdl) + migration12IndexDdl
         )
 
         val db = openWithRoom()
