@@ -50,7 +50,7 @@ class WorkspaceIntegrationTest {
     @Test
     fun `local autonomous engine synthesizes neural lattice, patches, and 4-part report offline`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val db = NyxDatabase.getInstance(context)
+        val db = NyxDatabase.getInMemory(context)
         val dao = db.forensicSessionDao()
         val knowledge = ThreatKnowledgeEngine(dao)
         val patchEngine = PatchAndReportEngine(
@@ -91,7 +91,7 @@ class WorkspaceIntegrationTest {
     @Test
     fun `custom neural conversational engine classifies intents and remembers target context without API keys`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val db = NyxDatabase.getInstance(context)
+        val db = NyxDatabase.getInMemory(context)
         val dao = db.forensicSessionDao()
         val knowledge = ThreatKnowledgeEngine(dao)
         val patchEngine = PatchAndReportEngine(
