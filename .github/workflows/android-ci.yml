@@ -204,6 +204,7 @@ jobs:
         run: |
           set +e
           export ANDROID_AVD_HOME="$HOME/.android/avd"
+          ADB="${ANDROID_HOME}/platform-tools/adb"
           mkdir -p "$ANDROID_AVD_HOME"
           echo 'no' | "${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager" create avd --force \
             -n aura_avd -k 'system-images;android-31;default;x86_64' --device pixel_5 > avd.log 2>&1
@@ -213,20 +214,21 @@ jobs:
             echo "::error title=AVD creation failed::$(tail -c 1800 avd.log | tr '\n' '~' | tr -d '\r')"
             exit 1
           fi
-          adb start-server
+          "$ADB" start-server
 
       - name: Launch emulator & wait (diagnosed)
         run: |
           set +e
           export ANDROID_AVD_HOME="$HOME/.android/avd"
+          ADB="${ANDROID_HOME}/platform-tools/adb"
           nohup "${ANDROID_HOME}/emulator/emulator" -port 5554 -avd aura_avd \
             -no-window -no-snapshot -no-boot-anim -no-audio -gpu swiftshader_indirect \
             > emulator.log 2>&1 &
           echo "emulator pid $!"
-          adb wait-for-device
+          "$ADB" wait-for-device
           booted=""
           for i in $(seq 1 150); do
-            booted=$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            booted=$("$ADB" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             [ "$booted" = "1" ] && break
             sleep 2
           done
@@ -236,9 +238,9 @@ jobs:
             echo "::error title=emulator did not boot::timeout 300s esperando boot_completed"
             exit 1
           fi
-          adb -s emulator-5554 shell settings put global window_animation_scale 0.0
-          adb -s emulator-5554 shell settings put global transition_animation_scale 0.0
-          adb -s emulator-5554 shell settings put global animator_duration_scale 0.0
+          "$ADB" -s emulator-5554 shell settings put global window_animation_scale 0.0
+          "$ADB" -s emulator-5554 shell settings put global transition_animation_scale 0.0
+          "$ADB" -s emulator-5554 shell settings put global animator_duration_scale 0.0
 
       - name: Run instrumented tests (SQLCipher + migraciones)
         run: |
@@ -254,7 +256,7 @@ jobs:
 
       - name: Stop emulator
         if: always()
-        run: adb -s emulator-5554 emu kill || true
+        run: ${ANDROID_HOME}/platform-tools/adb -s emulator-5554 emu kill || true
 
       - name: Upload instrumented reports
         if: always()
