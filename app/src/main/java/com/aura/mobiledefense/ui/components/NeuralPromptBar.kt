@@ -70,6 +70,10 @@ fun NeuralPromptBar(
             "/tls cloudflare.com",
             "/sockets",
             "/apps",
+            "/apps-blocked",
+            "/block-app com.whatsapp",
+            "/osv PyPI:django:3.2.1",
+            "/urlhaus cloudflare.com",
             "/intro"
         )
     }

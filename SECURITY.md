@@ -27,7 +27,8 @@ En alcance:
 
 Fuera de alcance:
 
-- Falta de cifrado en reposo de la base de datos (limitación conocida, ver roadmap del README)
+- Ataques que requieran un dispositivo rooteado con hooks activos sobre el proceso de Aura
+- Conectividad IPv6 (controlada a propósito con blackhole auditado; ver README)
 - Requerir root para funcionalidades que el README ya marca como limitadas sin root
 - Ataques que requieran un dispositivo ya comprometido con root y hooks activos
 

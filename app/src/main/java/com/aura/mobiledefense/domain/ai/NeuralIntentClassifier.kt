@@ -209,6 +209,49 @@ class NeuralIntentClassifier {
             )
         ),
         IntentRuleSet(
+            toolId = "APP_FIREWALL_BLOCK",
+            focus = "Bloqueo de una aplicación concreta a nivel de kernel (uid owner DROP)",
+            weights = mapOf(
+                "app" to 2.6f, "aplicacion" to 2.6f, "aplicaciones" to 1.8f,
+                "paquete" to 3.2f, "bloquea" to 3.0f, "bloquear" to 3.0f,
+                "corta" to 2.6f, "impide" to 2.2f
+            ),
+            prefersRoot = true
+        ),
+        IntentRuleSet(
+            toolId = "APP_FIREWALL_ALLOW",
+            focus = "Retirar el bloqueo de una aplicación concreta (kernel)",
+            weights = mapOf(
+                "app" to 2.6f, "aplicacion" to 2.6f, "paquete" to 3.2f,
+                "desbloquea" to 4.0f, "permite" to 3.0f, "libera" to 2.8f
+            ),
+            prefersRoot = true
+        ),
+        IntentRuleSet(
+            toolId = "APP_FIREWALL_LIST",
+            focus = "Listar apps instaladas y reglas de bloqueo por app activas",
+            weights = mapOf(
+                "apps" to 3.4f, "aplicaciones" to 3.2f, "lista" to 3.2f,
+                "listar" to 3.2f, "bloqueadas" to 3.8f, "instaladas" to 2.6f
+            )
+        ),
+        IntentRuleSet(
+            toolId = "INTEL_OSV_QUERY",
+            focus = "Consulta de vulnerabilidades por paquete y versión exacta en OSV",
+            weights = mapOf(
+                "osv" to 5.0f, "vulnerabilidad" to 2.6f, "vulnerables" to 2.6f,
+                "cve" to 2.4f, "paquete" to 2.0f, "version" to 1.6f
+            )
+        ),
+        IntentRuleSet(
+            toolId = "INTEL_URLHAUS_CHECK",
+            focus = "Reputación de un host/URL en URLhaus (abuse.ch)",
+            weights = mapOf(
+                "urlhaus" to 5.0f, "malicioso" to 3.2f, "reputacion" to 3.4f,
+                "abuse" to 3.0f, "malware" to 2.4f
+            )
+        ),
+        IntentRuleSet(
             toolId = "EXECUTE_SOLUTIONS",
             focus = "Ejecución en vivo de soluciones y mitigaciones de vulnerabilidades",
             weights = mapOf(
@@ -291,6 +334,11 @@ class NeuralIntentClassifier {
             }
             if (packageMention.isNotBlank() && neuron.toolId == "APP_SURFACE_AUDIT") {
                 z += 3.2f
+            }
+            if (packageMention.isNotBlank() &&
+                (neuron.toolId == "APP_FIREWALL_BLOCK" || neuron.toolId == "APP_FIREWALL_ALLOW")
+            ) {
+                z += 3.6f
             }
             if (tokens.contains("atacando") || tokens.contains("ataque") || tokens.contains("intrusion")) {
                 if (neuron.toolId == "FULL_AUTONOMOUS_AUDIT" || neuron.toolId == "NETWORK_SOCKETS" || neuron.toolId == "VPN_START") z += 1.6f
@@ -388,6 +436,16 @@ class NeuralIntentClassifier {
                 ForensicToolPlan("APP_SURFACE_AUDIT", trimmed.removePrefix("/apps").trim(), "", mode == PrivilegeMode.ROOT, "Superficie de aplicaciones")
             lowerNorm.startsWith("/jwt") || lowerNorm.startsWith("/hash") || lowerNorm.startsWith("/crypto") ->
                 ForensicToolPlan("CRYPTO_JWT", trimmed, "", false, "Análisis criptográfico y JWT")
+            lowerNorm.startsWith("/block-app ") || lowerNorm.startsWith("/blockapp ") ->
+                ForensicToolPlan("APP_FIREWALL_BLOCK", trimmed.substringAfter("app ").trim(), "", true, "Bloqueo por app (kernel, requiere root)")
+            lowerNorm.startsWith("/allow-app ") || lowerNorm.startsWith("/unblock-app ") || lowerNorm.startsWith("/allowapp ") ->
+                ForensicToolPlan("APP_FIREWALL_ALLOW", trimmed.substringAfter("app ").trim(), "", true, "Retirar bloqueo por app")
+            lowerNorm == "/apps-blocked" || lowerNorm == "/bloqueadas" ->
+                ForensicToolPlan("APP_FIREWALL_LIST", "", "", false, "Listar apps bloqueadas")
+            lowerNorm.startsWith("/osv ") ->
+                ForensicToolPlan("INTEL_OSV_QUERY", trimmed.removePrefix("/osv").trim(), "", false, "Consulta de vulnerabilidades en OSV")
+            lowerNorm.startsWith("/urlhaus ") ->
+                ForensicToolPlan("INTEL_URLHAUS_CHECK", trimmed.removePrefix("/urlhaus").trim(), "", false, "Reputación de host/URL en URLhaus")
             lowerNorm.startsWith("/vpn on") || lowerNorm == "/vpn start" || lowerNorm == "/vpn activar" ->
                 ForensicToolPlan("VPN_START", "", "", false, "Activar VPN Local y Firewall")
             lowerNorm.startsWith("/vpn off") || lowerNorm == "/vpn stop" ->
