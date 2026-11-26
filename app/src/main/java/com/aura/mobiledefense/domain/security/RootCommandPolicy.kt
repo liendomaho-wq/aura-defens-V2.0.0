@@ -80,10 +80,17 @@ object RootCommandPolicy {
         "--delete-chain", "--replace", "--zero", "--check", "-C"
     )
 
+    // NB: las acciones estilo find (-exec/-delete/-ok) se validan a nivel de TOKEN más abajo.
+    // Como substring rompían texto legítimo: "-ok" negaba el propio 'echo aura-ok'.
     private val forbiddenSubstrings = listOf(
         ">", "<", "`", "\$(", "\${", "/dev/block", "/dev/mem",
         "chmod 777", "chcon ", "/system/bin/sh", "/system/xbin/su",
-        "-exec", "--exec", "-delete", "-ok", "run-as", "base64 -d"
+        "run-as", "base64 -d"
+    )
+
+    /** Tokens exactos que ejecutan o borran (acciones de find y equivalentes). */
+    private val dangerousActionTokens = setOf(
+        "-exec", "-execdir", "--exec", "-ok", "-okdir", "-delete"
     )
 
     /**
@@ -174,6 +181,10 @@ object RootCommandPolicy {
 
         for (segment in segments) {
             val tokens = segment.split(Regex("\\s+")).filter { it.isNotBlank() }
+            val dangerous = tokens.drop(1).firstOrNull { dangerousActionTokens.contains(it.substringBefore("=").lowercase()) }
+            if (dangerous != null) {
+                return Decision.Denied("Acción '$dangerous' bloqueada: ejecuta o borra archivos.")
+            }
             val binary = tokens.first().lowercase().substringAfterLast('/')
             if (tokens.size > 24) {
                 return Decision.Denied("Segmento demasiado largo: '${segment.take(40)}…'.")

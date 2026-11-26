@@ -22,7 +22,9 @@ object TelemetryRedactor {
     /** Personal app packages: keep the vendor, drop the per-user suffix. */
     private val userPackage = Regex("\\b(com|org|net|io)\\.([a-z0-9_]+)\\.[a-z0-9_]{6,}\\b")
 
-    private val bearerToken = Regex("(?i)(bearer|token|authorization|api[-_]?key)\\s*[:=]\\s*[A-Za-z0-9._\\-]{12,}")
+    // Captura "Bearer <t>", "Authorization: Bearer <t>", "Authorization: <t>" y "api_key=<t>".
+    // El secreto va en el grupo 3 para sustituir SOLO el secreto, nunca el prefijo.
+    private val bearerToken = Regex("(?i)(bearer\\s+|authorization\\s*:\\s*(bearer\\s+)?|api[-_]?key\\s*[:=]\\s*)([A-Za-z0-9._\\-]{12,})")
     private val jwt = Regex("eyJ[A-Za-z0-9_-]{6,}\\.[A-Za-z0-9_-]{6,}\\.[A-Za-z0-9_-]*")
     private val serial = Regex("(?i)\\b(serial(no)?|imei|android_id|ssaid)\\s*[:=]\\s*[A-Za-z0-9._\\-]{6,}")
 
@@ -43,12 +45,15 @@ object TelemetryRedactor {
         var out = text
 
         out = bearerToken.replace(out) { m ->
-            val head = m.value.substringBefore(":").substringBefore("=").trim()
-            "$head: <CREDENCIAL>"
+            // Conserva el prefijo (p.ej. "Authorization: Bearer ") y sustituye solo el secreto.
+            val prefix = m.value.substring(0, m.value.length - m.groupValues[3].length)
+            "$prefix<CREDENCIAL>"
         }
         out = jwt.replace(out, "<JWT>")
         out = serial.replace(out) { m ->
-            val head = m.value.substringBefore(":").substringBefore("=").trim()
+            val match = m.value
+            val sep = if (':' in match) ':' else '='
+            val head = match.substringBefore(sep).trim()
             "$head: <IDENTIFICADOR>"
         }
         out = email.replace(out, "<EMAIL>")

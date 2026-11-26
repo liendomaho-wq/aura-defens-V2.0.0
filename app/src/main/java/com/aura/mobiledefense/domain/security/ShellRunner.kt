@@ -4,7 +4,6 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Único punto de ejecución de procesos de Aura.
@@ -86,34 +85,43 @@ object ShellRunner {
     private suspend fun exec(argv: List<String>, timeoutMs: Long): Output = withContext(Dispatchers.IO) {
         var process: Process? = null
         try {
-            process = ProcessBuilder(argv).redirectErrorStream(false).start()
+            process = ProcessBuilder(argv)
+                .redirectErrorStream(false)
+                // stdin queda como PIPE y nadie escribe: un `cat` sin argumentos espera para
+                // siempre, que es exactamente el cuelgue que timeoutMs debe cortar.
+                .start()
             val started = process
-            val finished = withTimeoutOrNull(timeoutMs) {
-                val stdout = StringBuilder()
-                val stderr = StringBuilder()
-                val readerThread = Thread {
-                    runCatching { started.inputStream.bufferedReader().use { stdout.append(it.readText()) } }
-                }
-                val errThread = Thread {
-                    runCatching { started.errorStream.bufferedReader().use { stderr.append(it.readText()) } }
-                }
-                readerThread.start()
-                errThread.start()
-                val code = started.waitFor()
-                readerThread.join(1500)
-                errThread.join(1500)
-                Output(code, stdout.toString().take(MAX_OUTPUT), stderr.toString().take(MAX_OUTPUT))
+            val stdout = StringBuilder()
+            val stderr = StringBuilder()
+            val readerThread = Thread {
+                runCatching { started.inputStream.bufferedReader().use { stdout.append(it.readText()) } }
             }
-            if (finished != null) return@withContext finished
+            val errThread = Thread {
+                runCatching { started.errorStream.bufferedReader().use { stderr.append(it.readText()) } }
+            }
+            readerThread.isDaemon = true
+            errThread.isDaemon = true
+            readerThread.start()
+            errThread.start()
 
-            // Timeout: matar de verdad, no dejar el proceso huérfano.
-            runCatching { started.destroyForcibly() }
-            Output(
-                exitCode = -2,
-                stdout = "",
-                stderr = "Tiempo de espera agotado (${timeoutMs}ms). Proceso terminado.",
-                timedOut = true
-            )
+            // El corte por tiempo vive AQUÍ, no en un timeout de corrutina: el bloque es
+            // bloqueante y nunca suspende, así que withTimeoutOrNull no podría interrumpirlo.
+            val exited = started.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+            if (!exited) {
+                runCatching { started.destroyForcibly() }
+                started.waitFor(2, TimeUnit.SECONDS)
+                readerThread.join(500)
+                errThread.join(500)
+                return@withContext Output(
+                    exitCode = -2,
+                    stdout = stdout.toString().take(MAX_OUTPUT),
+                    stderr = "Tiempo de espera agotado (${timeoutMs}ms). Proceso terminado.",
+                    timedOut = true
+                )
+            }
+            readerThread.join(1500)
+            errThread.join(1500)
+            Output(started.exitValue(), stdout.toString().take(MAX_OUTPUT), stderr.toString().take(MAX_OUTPUT))
         } catch (e: Exception) {
             runCatching { process?.destroyForcibly() }
             Output(-1, "", e.message ?: e.javaClass.simpleName)
