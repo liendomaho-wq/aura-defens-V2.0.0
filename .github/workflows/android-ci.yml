@@ -165,7 +165,16 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest --stacktrace
+          script: |
+            set +e
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace > itest.log 2>&1
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test|Instrumentation)" -A3 itest.log | head -150 | tr "\n" "~" | tr -d "\r")
+              echo "::error title=Instrumented tests failed::${errors}"
+              tail -n 30 itest.log | tr "\n" "~" | tr -d "\r" | sed "s/^/::error title=log tail::/"
+              exit "$status"
+            fi
 
       - name: Upload instrumented reports
         if: always()
