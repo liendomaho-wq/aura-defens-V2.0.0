@@ -236,8 +236,10 @@ app/src/main/java/com/aura/mobiledefense/
 
 - [x] Cifrado en reposo de la evidencia (SQLCipher + clave envuelta por AndroidKeyStore)
 - [ ] Partir `NyxViewModel` (813 líneas) y los canvas de UI en módulos más pequeños
-- [ ] Cobertura de tests para los engines que tocan el sistema (ya hay 21 pruebas nuevas de
-      firewall y de la política de privilegios)
+- [x] Cobertura de tests para los caminos críticos: política de root (invariantes + plantillas
+      cerradas), proxy TCP/UDP (bytes en ambos sentidos), parsers de intel (OSV/URLhaus),
+      firewall por app (comandos firmados y negativas de seguridad)
+- [ ] Cobertura de los engines que tocan el sistema en emulador más allá de SQLCipher/migraciones
 - [x] `applicationId` propio (`com.aura.mobiledefense`, alineado con el `namespace`)
 - [x] Modo "IA Online" implementado como LLM real (BYOK) con catálogo cerrado de herramientas
 - [ ] Modelo on-device real: el adaptador `FunctionGemmaToolProvider` está listo y probado; falta
