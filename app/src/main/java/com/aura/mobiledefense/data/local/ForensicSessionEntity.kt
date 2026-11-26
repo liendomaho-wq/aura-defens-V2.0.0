@@ -1,6 +1,7 @@
 package com.aura.mobiledefense.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "forensic_sessions")
@@ -33,7 +34,9 @@ data class MonitorTargetEntity(
     val isActive: Boolean
 )
 
-@Entity(tableName = "anomaly_events")
+// Los índices coinciden exactamente con los que crea MIGRATION_1_2: Room valida el esquema
+// contra la base real al migrar, así que entidades y migraciones deben declarar lo mismo.
+@Entity(tableName = "anomaly_events", indices = [Index("target"), Index("timestamp")])
 data class AnomalyEventEntity(
     @PrimaryKey val id: String,
     val target: String,
@@ -43,7 +46,7 @@ data class AnomalyEventEntity(
     val timestamp: Long
 )
 
-@Entity(tableName = "threat_rules")
+@Entity(tableName = "threat_rules", indices = [Index("vendorOrCategory")])
 data class ThreatRuleEntity(
     @PrimaryKey val ruleId: String,
     val source: String,
@@ -55,7 +58,7 @@ data class ThreatRuleEntity(
     val updatedAt: Long
 )
 
-@Entity(tableName = "firewall_rules")
+@Entity(tableName = "firewall_rules", indices = [Index("pattern")])
 data class FirewallRuleEntity(
     @PrimaryKey val id: String,
     val pattern: String,
