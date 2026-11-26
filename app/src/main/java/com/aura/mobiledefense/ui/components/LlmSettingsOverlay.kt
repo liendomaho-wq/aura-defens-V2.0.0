@@ -289,7 +289,7 @@ fun LlmSettingsOverlay(
             Section(title = "QUÉ HACE LA IA", accent = NyxEmerald) {
                 SettingRow(
                     title = "Elegir la herramienta",
-                    subtitle = "El LLM propone; Aura valida contra el catálogo cerrado de 20 funciones"
+                    subtitle = "El LLM propone; Aura valida contra el catálogo cerrado de 25 funciones"
                 ) {
                     Switch(
                         checked = settings.useForIntent,

@@ -10,7 +10,8 @@ import org.json.JSONObject
  * calling* nativo de Gemma) al contrato [LlmProvider] que ya usa [LlmIntentResolver].
  *
  * Flujo:
- *   user (texto en español) + catálogo cerrado de 20 herramientas
+ *   user (texto en español) + catálogo de herramientas (el dataset congelado tiene 20; el
+ *   catálogo actual declara 25 — los proveedores API reciben el catálogo vigente)
  *     -> `<start_function_call>call:PORT_PROBE{reason:<escape>…<escape>,target:<escape>…<escape>}<end_function_call>`
  *     -> [toJson] lo convierte al JSON `{toolId, target, needsTarget, reason}` que espera el resolver
  *     -> [LlmIntentResolver] valida contra [AuraToolCatalog] y [TargetValidator].

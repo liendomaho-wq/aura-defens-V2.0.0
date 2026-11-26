@@ -18,6 +18,12 @@ de JetBrains Mono: © JetBrains s.r.o. Copyright de Space Grotesk: © Florian Ka
 - **CISA Known Exploited Vulnerabilities (KEV)**: catálogo público del Gobierno de EE. UU.,
   descargado en tiempo de ejecución desde `cisa.gov`. No se redistribuye dentro del APK.
   Uso sujeto a los términos del sitio de CISA.
+- **OSV (osv.dev)**: servicio abierto de la comunidad de código abierto (Google/OpenSSF) que agrega
+  advisories de múltiples ecosistemas (PyPI, npm, Go, Maven, crates.io, RubyGems, NuGet, GitHub…).
+  Consultado en tiempo de ejecución, solo bajo petición explícita. API pública y gratuita.
+- **URLhaus (abuse.ch)**: servicio público y gratuito de abuse.ch (financiado por la comunidad) que
+  cataloga URLs maliciosas para la distribución de malware. Consultado en tiempo de ejecución,
+  solo bajo petición explícita. Uso sujeto a los términos de abuse.ch.
 
 ## Dependencias principales
 
