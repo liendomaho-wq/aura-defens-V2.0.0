@@ -59,7 +59,7 @@ class TcpDataPathTest {
     ): ByteArray = PacketCodec.buildIpv4TcpPacket(
         srcIp = byteArrayOf(10, 8, 0, 2),
         srcPort = srcPort,
-        dstIp = byteArrayOf(203, 0, 113, 9),
+        dstIp = byteArrayOf(203.toByte(), 0, 113.toByte(), 9),
         dstPort = dstPort,
         seq = seq,
         ack = ack,
