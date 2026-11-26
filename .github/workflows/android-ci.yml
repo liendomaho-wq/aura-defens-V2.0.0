@@ -144,6 +144,22 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+          sudo chmod 666 /dev/kvm || true
+
+      # Diagnóstico del runner: se publica como anotaciones ::notice para poder leerlo
+      # aunque el emulador no llegue a arrancar (el log del job no es accesible desde fuera).
+      - name: Emulator environment probe
+        run: |
+          echo "::notice title=kvm::$(ls -l /dev/kvm 2>&1)"
+          echo "::notice title=id::$(id 2>&1)"
+          echo "::notice title=android_home::${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          echo "::notice title=sdk contents::$(ls "${ANDROID_HOME:-/nonexistent}" 2>&1)"
+          echo "::notice title=cmdline-tools::$(ls "${ANDROID_HOME:-/nonexistent}/cmdline-tools" 2>&1)"
+          echo "::notice title=sdkmanager::$(ls "${ANDROID_HOME:-/nonexistent}/cmdline-tools/latest/bin/sdkmanager" 2>&1)"
+          echo "::notice title=system images::$(ls "${ANDROID_HOME:-/nonexistent}/system-images" 2>&1)"
+          echo "::notice title=disk::$(df -h / | tail -1)"
+          echo "::notice title=mem::$(free -h | sed -n 2p)"
+          echo "::notice title=cpus::$(nproc)"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
