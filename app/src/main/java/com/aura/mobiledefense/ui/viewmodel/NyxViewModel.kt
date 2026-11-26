@@ -32,6 +32,7 @@ import com.aura.mobiledefense.domain.ai.llm.AuraLlmOrchestrator
 import com.aura.mobiledefense.domain.ai.llm.AuraToolCatalog
 import com.aura.mobiledefense.domain.ai.llm.LlmSettings
 import com.aura.mobiledefense.domain.ai.llm.LlmSettingsStore
+import com.aura.mobiledefense.domain.ai.llm.LlmFailure
 import com.aura.mobiledefense.domain.engines.AppSelfIntegrityEngine
 import com.aura.mobiledefense.domain.engines.BinaryCryptoEngine
 import com.aura.mobiledefense.domain.engines.NetworkForensicsEngine
@@ -63,7 +64,22 @@ private const val KEY_TOUR_DONE = "visual_tour_completed"
 
 class NyxViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = NyxDatabase.getInstance(application)
+    /**
+     * La base se abre de forma perezosa y protegida: si el AndroidKeyStore no puede descifrar la
+     * clave de SQLCipher, el fallo debe llegar a la UI como un error legible y no como un crash en el
+     * constructor del ViewModel (que ocurre antes de que exista cualquier pantalla).
+     */
+    private val databaseResult: Result<NyxDatabase> = runCatching { NyxDatabase.getInstance(application) }
+
+    /** true cuando la base cifrada no se pudo abrir y se está usando una base volátil. */
+    private var storageDegraded: Boolean = false
+
+    private val db: NyxDatabase = databaseResult.getOrElse {
+        storageDegraded = true
+        Log.e(TAG, "Base cifrada no disponible; usando base en memoria", it)
+        NyxDatabase.getInMemory(application)
+    }
+
     private val dao = db.forensicSessionDao()
     private val sessionRepository = ForensicSessionRepository(dao)
 
@@ -139,6 +155,13 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
 
     val vpnTelemetry: StateFlow<VpnFirewallTelemetry> = VpnFirewallManager.telemetry
 
+    /** true si la base forense está realmente cifrada con SQLCipher en este dispositivo. */
+    val databaseEncrypted: Boolean get() = com.aura.mobiledefense.data.local.AuraDatabaseCipher.isEncrypted()
+
+    /** Motivo por el que no está cifrada, si aplica. */
+    val databaseEncryptionFault: String?
+        get() = com.aura.mobiledefense.data.local.AuraDatabaseCipher.lastFaultReason
+
     /** LLM configuration (BYOK). Observable so the settings sheet reacts immediately. */
     val llmSettings: StateFlow<LlmSettings> = llmSettingsStore.settings
 
@@ -205,6 +228,15 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                 phase = "Activando red neuronal y sondas de integridad…",
                 previousScene = lastScene
             )
+            if (storageDegraded) {
+                _chatMessages.value = _chatMessages.value + AuraChatMessage(
+                    speaker = ChatSpeaker.AURA,
+                    subtitle = "ALMACENAMIENTO DEGRADADO",
+                    text = "No se pudo abrir la base cifrada con el AndroidKeyStore de este dispositivo. " +
+                        "Aura sigue operativa con una base volátil: la evidencia de esta sesión no se " +
+                        "guardará. La base cifrada anterior NO se ha borrado."
+                )
+            }
             try {
                 VpnFirewallManager.ensureInitialized(getApplication())
                 threatKnowledgeEngine.ensureBaselineKnowledgeSeeded()
@@ -414,6 +446,17 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                     activeMode
                 }
 
+                // Si el modelo estaba configurado y falló (sin red, JSON inválido, herramienta fuera
+                // del catálogo, inyección detectada), se dice en el panel. Antes el fallback era
+                // completamente silencioso y parecía que el LLM no estaba haciendo nada.
+                resolution.failure?.let { failure ->
+                    _chatMessages.value = _chatMessages.value + AuraChatMessage(
+                        speaker = ChatSpeaker.AURA,
+                        subtitle = "MOTOR IA · FALLBACK LOCAL",
+                        text = llmFallbackMessage(failure, resolution.modelReason)
+                    )
+                }
+
                 _uiState.value = WorkspaceUiState.Analyzing(
                     phase = when (resolution.source) {
                         AuraLlmOrchestrator.ResolutionSource.LLM ->
@@ -524,6 +567,28 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    private fun llmFallbackMessage(failure: LlmFailure, modelReason: String): String = when (failure) {
+        LlmFailure.NOT_CONFIGURED ->
+            "No hay proveedor LLM configurado: he usado el clasificador heurístico local. " +
+                "Configúralo con /ia si quieres el motor con modelo."
+        LlmFailure.NETWORK ->
+            "El proveedor LLM no respondió (red, timeout o clave inválida). He resuelto la petición " +
+                "con el clasificador local para no dejarte sin respuesta."
+        LlmFailure.UNPARSEABLE ->
+            "El modelo devolvió una respuesta que no cumple el contrato JSON. He descartado su " +
+                "elección y ejecutado el clasificador local."
+        LlmFailure.TOOL_NOT_ALLOWED ->
+            "El modelo propuso una herramienta que no existe en el catálogo cerrado de Aura. " +
+                "Petición rechazada y reenrutada al clasificador local."
+        LlmFailure.INJECTION_SUSPECTED ->
+            "He detectado marcadores de prompt injection en tu mensaje, así que no he llamado al " +
+                "modelo. El clasificador local ha resuelto la petición."
+        LlmFailure.NEEDS_TARGET ->
+            "El modelo identificó la herramienta pero falta el objetivo (dominio, IP o puerto). " +
+                (modelReason.takeIf { it.isNotBlank() }?.let { "Motivo: $it. " } ?: "") +
+                "Indícalo y repito la operación."
     }
 
     fun inspectFileUri(uri: Uri) {
@@ -637,7 +702,9 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun runLiveSolutionExecution(mode: PrivilegeMode) {
         val currentScene = lastScene
         val patches = currentScene?.patches.orEmpty()
-        val target = currentScene?.subtitle?.substringBefore("·")?.trim().orEmpty()
+        // Objetivo estructurado: antes se sacaba con substringBefore("·") del subtítulo, que se
+        // rompía en cuanto el formato o el propio objetivo contenía el separador.
+        val target = currentScene?.target?.trim().orEmpty()
         val telemetry = currentScene?.rawTelemetry.orEmpty()
 
         val execMsgId = java.util.UUID.randomUUID().toString()
@@ -744,7 +811,17 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                 _llmStatus.value = "Sin configuración válida: revisa clave, modelo y endpoint."
                 return@launch
             }
-            _llmStatus.value = "Probando ${provider.displayName}…"
+            val cleartextWarning = LlmSettingsStore.cleartextWarning(settings.baseUrl)
+            if (cleartextWarning != null) {
+                _llmStatus.value = cleartextWarning
+                return@launch
+            }
+            if (!llmSettingsStore.secureStorageAvailable) {
+                _llmStatus.value = "Aviso: el AndroidKeyStore no está disponible; la clave se queda " +
+                    "solo en memoria y se perderá al cerrar la app."
+            } else {
+                _llmStatus.value = "Probando ${provider.displayName}…"
+            }
             val reply = runCatching {
                 provider.complete(
                     system = "Responde solo con la palabra OK.",
@@ -753,11 +830,13 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                     maxTokens = 16
                 )
             }.getOrNull()
-            _llmStatus.value = if (reply != null) {
+            val result = if (reply != null) {
                 "Conexión correcta con ${provider.displayName}: ${reply.take(60)}"
             } else {
                 "El modelo no respondió. Revisa la clave, el endpoint o tu conexión."
             }
+            _llmStatus.value = if (llmSettingsStore.secureStorageAvailable) result
+            else "Aviso: clave solo en memoria (KeyStore no disponible). $result"
         }
     }
 

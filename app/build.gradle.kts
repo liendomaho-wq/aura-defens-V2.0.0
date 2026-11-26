@@ -68,6 +68,15 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+
+  // Room exports its schema to `schemas/`; MigrationTestHelper reads those files from the
+  // androidTest APK's assets. Sin este srcDir, runMigrationsAndValidate falla con
+  // "Unable to find schema .../3.json" y los tests de migración no sirven de nada.
+  sourceSets {
+    getByName("androidTest") {
+      assets.srcDir("$projectDir/schemas")
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

@@ -79,6 +79,7 @@ class ForensicSessionRepository(
             put("query", scene.query)
             put("title", scene.title)
             put("subtitle", scene.subtitle)
+            put("target", scene.target)
             put("visualKind", scene.visualKind.name)
             put("severityScore", scene.severityScore.toDouble())
             put("narrative", scene.narrative)
@@ -166,6 +167,7 @@ class ForensicSessionRepository(
                 query = obj.optString("query", ""),
                 title = obj.optString("title", "Sesión Aura"),
                 subtitle = obj.optString("subtitle", ""),
+                target = obj.optString("target", ""),
                 visualKind = VisualTopologyKind.fromWire(
                     obj.optString("visualKind", "NEURAL_SYNAPTIC_LATTICE")
                 ),

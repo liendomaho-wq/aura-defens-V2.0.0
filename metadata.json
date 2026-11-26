@@ -1,6 +1,6 @@
 {
   "name": "Aura Mobile Defense",
-  "description": "Plataforma Android de ciberdefensa local: auditoría forense del dispositivo y de endpoints autorizados, VPN local con firewall a nivel de paquete y DNS sinkhole, monitorización de anomalías, parches y motor conversacional heurístico on-device (sin LLM en la nube).",
+  "description": "Plataforma Android de ciberdefensa local: auditoría forense del dispositivo y de endpoints autorizados, VPN local con firewall a nivel de paquete y DNS sinkhole, monitorización de anomalías, parches y motor conversacional con LLM BYOK opcional (Gemini u OpenAI-compatible) y clasificador heurístico local como fallback.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

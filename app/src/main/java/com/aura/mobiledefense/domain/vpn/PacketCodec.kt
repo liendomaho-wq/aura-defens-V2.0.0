@@ -225,6 +225,105 @@ object PacketCodec {
         return out
     }
 
+    /**
+     * Recalcula el checksum IPv4 de un paquete **en el sitio** (bytes 10-11).
+     * Se usa cada vez que el proxy reescribe la cabecera de un paquete capturado del TUN.
+     */
+    fun applyIpv4Checksum(packet: ByteArray, headerLen: Int) {
+        packet[10] = 0
+        packet[11] = 0
+        val checksum = computeIpChecksum(packet, 0, headerLen)
+        packet[10] = ((checksum ushr 8) and 0xFF).toByte()
+        packet[11] = (checksum and 0xFF).toByte()
+    }
+
+    /** Checksum de un segmento TCP (pseudo-cabecera IPv4 + cabecera + payload). */
+    fun tcpChecksum(segment: ByteArray, srcIp: ByteArray, dstIp: ByteArray): Int {
+        var sum = 0L
+        sum += ((srcIp[0].toInt() and 0xFF) shl 8) or (srcIp[1].toInt() and 0xFF)
+        sum += ((srcIp[2].toInt() and 0xFF) shl 8) or (srcIp[3].toInt() and 0xFF)
+        sum += ((dstIp[0].toInt() and 0xFF) shl 8) or (dstIp[1].toInt() and 0xFF)
+        sum += ((dstIp[2].toInt() and 0xFF) shl 8) or (dstIp[3].toInt() and 0xFF)
+        sum += PROTO_TCP.toLong()
+        sum += segment.size.toLong()
+        var i = 0
+        while (i < segment.size) {
+            val hi = segment[i].toInt() and 0xFF
+            val lo = if (i + 1 < segment.size) segment[i + 1].toInt() and 0xFF else 0
+            sum += (hi shl 8) or lo
+            i += 2
+        }
+        while ((sum ushr 16) != 0L) {
+            sum = (sum and 0xFFFFL) + (sum ushr 16)
+        }
+        return (sum.inv() and 0xFFFFL).toInt()
+    }
+
+    /**
+     * Construye un paquete IPv4 + TCP completo y con checksums válidos.
+     *
+     * `seq`/`ack` van en espacio de 32 bits sin signo; el desbordamiento natural de la suma de
+     * secuencias es correcto por diseño del protocolo.
+     */
+    fun buildIpv4TcpPacket(
+        srcIp: ByteArray,
+        srcPort: Int,
+        dstIp: ByteArray,
+        dstPort: Int,
+        seq: Long,
+        ack: Long,
+        flags: Int,
+        payload: ByteArray = ByteArray(0),
+        window: Int = 65535
+    ): ByteArray {
+        val tcpLen = 20 + payload.size
+        val totalLen = 20 + tcpLen
+        val out = ByteArray(totalLen)
+
+        // ── IPv4 ──
+        out[0] = 0x45
+        out[1] = 0
+        out[2] = ((totalLen ushr 8) and 0xFF).toByte()
+        out[3] = (totalLen and 0xFF).toByte()
+        out[4] = 0
+        out[5] = 0
+        out[6] = 0x40          // Don't Fragment
+        out[7] = 0
+        out[8] = 64            // TTL
+        out[9] = PROTO_TCP.toByte()
+        System.arraycopy(srcIp, 0, out, 12, 4)
+        System.arraycopy(dstIp, 0, out, 16, 4)
+        applyIpv4Checksum(out, 20)
+
+        // ── TCP ──
+        val t = 20
+        out[t] = ((srcPort ushr 8) and 0xFF).toByte()
+        out[t + 1] = (srcPort and 0xFF).toByte()
+        out[t + 2] = ((dstPort ushr 8) and 0xFF).toByte()
+        out[t + 3] = (dstPort and 0xFF).toByte()
+        out[t + 4] = ((seq ushr 24) and 0xFF).toByte()
+        out[t + 5] = ((seq ushr 16) and 0xFF).toByte()
+        out[t + 6] = ((seq ushr 8) and 0xFF).toByte()
+        out[t + 7] = (seq and 0xFF).toByte()
+        out[t + 8] = ((ack ushr 24) and 0xFF).toByte()
+        out[t + 9] = ((ack ushr 16) and 0xFF).toByte()
+        out[t + 10] = ((ack ushr 8) and 0xFF).toByte()
+        out[t + 11] = (ack and 0xFF).toByte()
+        out[t + 12] = 0x50      // data offset 5 (20 bytes), sin opciones
+        out[t + 13] = flags.toByte()
+        out[t + 14] = ((window ushr 8) and 0xFF).toByte()
+        out[t + 15] = (window and 0xFF).toByte()
+        // checksum en t+16..17 (se calcula abajo)
+        // urgent pointer 0
+        if (payload.isNotEmpty()) System.arraycopy(payload, 0, out, 40, payload.size)
+
+        val checksum = tcpChecksum(out.copyOfRange(t, totalLen), srcIp, dstIp)
+        out[t + 16] = ((checksum ushr 8) and 0xFF).toByte()
+        out[t + 17] = (checksum and 0xFF).toByte()
+
+        return out
+    }
+
     private fun computeIpChecksum(buf: ByteArray, offset: Int, len: Int): Int {
         var sum = 0L
         var i = offset

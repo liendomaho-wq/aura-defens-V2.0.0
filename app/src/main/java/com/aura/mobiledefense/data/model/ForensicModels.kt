@@ -115,6 +115,8 @@ data class AiVisualScene(
     val query: String,
     val title: String,
     val subtitle: String,
+    /** Objetivo estructurado que midió el engine (antes se reconstruía parseando el subtítulo). */
+    val target: String = "",
     val visualKind: VisualTopologyKind,
     val severityScore: Float,
     val narrative: String,

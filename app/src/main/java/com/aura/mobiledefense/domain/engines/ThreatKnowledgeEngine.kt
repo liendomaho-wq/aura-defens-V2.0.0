@@ -21,6 +21,9 @@ class ThreatKnowledgeEngine(
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
 
+    /** Tope de lectura del feed CISA KEV (4 MB; el catálogo real ronda 2 MB). */
+    private val maxKevBytes = 4 * 1024 * 1024
+
     private val cisaKevFeedUrl =
         "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
@@ -134,8 +137,24 @@ class ThreatKnowledgeEngine(
                     if (!response.isSuccessful) {
                         throw IllegalStateException("HTTP ${response.code} al consultar CISA KEV")
                     }
-                    val bodyStr = response.body?.string()
-                        ?: throw IllegalStateException("Respuesta vacía del catálogo CISA KEV")
+                    // El catálogo completo ronda los 2 MB. Se lee con tope duro para que una
+                    // respuesta hostil o corrupta no agote la memoria del teléfono.
+                    val bodyStr = response.body?.byteStream()?.use { stream ->
+                        val out = java.io.ByteArrayOutputStream(1 shl 20)
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0
+                        while (total < maxKevBytes) {
+                            val read = stream.read(buffer)
+                            if (read <= 0) break
+                            val allowed = minOf(read, maxKevBytes - total)
+                            out.write(buffer, 0, allowed)
+                            total += allowed
+                        }
+                        out.toString("UTF-8")
+                    } ?: throw IllegalStateException("Respuesta vacía del catálogo CISA KEV")
+                    if (bodyStr.length >= maxKevBytes) {
+                        sb.appendLine("Aviso: el catálogo superó ${maxKevBytes / (1024 * 1024)} MB y se truncó.")
+                    }
 
                     val json = JSONObject(bodyStr)
                     catalogVersion = json.optString("catalogVersion", "actual")
@@ -223,9 +242,48 @@ class ThreatKnowledgeEngine(
         withContext(Dispatchers.IO) {
             ensureBaselineKnowledgeSeeded()
             val lower = telemetry.lowercase()
-            dao.getAllThreatRules().filter { rule ->
-                val keys = rule.keywords.split(",").map { it.trim().lowercase() }.filter { it.length >= 3 }
-                keys.any { kw -> lower.contains(kw) }
-            }.take(12)
+            dao.getAllThreatRules()
+                .mapNotNull { rule -> rule.matchScore(lower)?.let { score -> rule to score } }
+                .filter { it.second > 0f }
+                .sortedByDescending { it.second }
+                .take(12)
+                .map { it.first }
         }
+
+    /**
+     * Puntuación de correlación de una regla contra la telemetría.
+     *
+     * Antes bastaba con que apareciera **una** palabra clave: como las reglas CISA KEV llevan el
+     * vendor y el producto (`linux`, `arm`, `apache`), cualquier Android real generaba decenas de
+     * coincidencias falsas. Ahora:
+     *
+     *  - Las reglas CISA KEV exigen coincidencia **múltiple** (vendor + producto, o el CVE explícito).
+     *  - Las palabras genéricas de menos de 5 caracteres no puntúan por sí solas.
+     *  - Las reglas locales curadas siguen puntuando con una sola coincidencia, porque sus keywords
+     *    son cadenas específicas (`debuggable=true`, `5555/tcp`…).
+     */
+    private fun ThreatRuleEntity.matchScore(lowerTelemetry: String): Float? {
+        val keys = keywords.split(",")
+            .map { it.trim().lowercase() }
+            .filter { it.length >= 3 }
+        if (keys.isEmpty()) return null
+
+        val hits = keys.count { lowerTelemetry.contains(it) }
+        if (hits == 0) return null
+
+        // El CVE explícito en la telemetría es la señal más fuerte que existe.
+        if (lowerTelemetry.contains(ruleId.lowercase())) return 1f
+
+        return if (source == "CISA_KEV") {
+            val strongKeys = keys.filter { it.length >= 5 }
+            val strongHits = strongKeys.count { lowerTelemetry.contains(it) }
+            when {
+                strongHits >= 2 -> 0.7f + (severity * 0.3f)
+                strongHits == 1 && keys.size == 1 -> 0.5f
+                else -> null
+            }
+        } else {
+            0.6f + (severity * 0.4f)
+        }
+    }
 }

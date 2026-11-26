@@ -52,6 +52,18 @@ class NyxDatabaseMigrationTest {
     }
 
     @Test
+    fun migrate3To4AddsSessionsIndex() {
+        helper.createDatabase(dbName, 3).close()
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, AuraMigrations.MIGRATION_3_4)
+
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='index_forensic_sessions_timestamp'"
+        ).use {
+            assertTrue("falta el índice de forensic_sessions.timestamp", it.moveToFirst())
+        }
+    }
+
+    @Test
     fun fullPathPreservesExistingSessions() {
         helper.createDatabase(dbName, 1).apply {
             execSQL(
@@ -65,7 +77,8 @@ class NyxDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            dbName, 3, true, AuraMigrations.MIGRATION_1_2, AuraMigrations.MIGRATION_2_3
+            dbName, 4, true,
+            AuraMigrations.MIGRATION_1_2, AuraMigrations.MIGRATION_2_3, AuraMigrations.MIGRATION_3_4
         )
         db.query("SELECT query FROM forensic_sessions WHERE id='s1'").use {
             assertTrue("la sesión se perdió en la migración", it.moveToFirst())

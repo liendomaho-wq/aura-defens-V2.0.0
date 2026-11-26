@@ -18,7 +18,7 @@ que **ejecuta acciones reales** (nunca simuladas) y devuelve informes con parche
 | Red local | Enumeración de interfaces, tabla TCP desde `/proc/net`, sockets, ARP, capacidades de red |
 | Endpoints remotos | X.509/TLS, cabeceras HTTP defensivas (HSTS, CSP…), sondeo TCP de puertos con banner |
 | Superficie de apps | Componentes exportados, `debuggable`, `allowBackup`, cleartext, firma SHA-256 por paquete |
-| **VPN local + firewall** | `VpnService` real: TUN `10.8.0.2/32`, DNS virtual en `10.8.0.1`, respuestas NXDOMAIN construidas a nivel de wire, rutas `/32` para IPs bloqueadas |
+| **VPN local + firewall** | `VpnService` real: TUN `10.8.0.2/32`, DNS virtual en `10.8.0.1` con NXDOMAIN a nivel de wire, **proxy TCP transparente completo** (SYN-ACK, relay bidireccional, RST) y bloqueo por IP/puerto/SNI |
 | Base de amenazas | Reglas locales + feed **CISA KEV** (JSON oficial) con correlación sobre la telemetría |
 | Motor conversacional | **LLM real (BYOK)**: Gemini, OpenAI/Groq/DeepSeek/Mistral o un servidor propio (Ollama/LM Studio), conectado a las 20 funciones de la app. Sin clave, cae al clasificador heurístico local |
 
@@ -41,6 +41,11 @@ Aura tiene dos cerebros intercambiables y elige el mejor disponible en cada mome
    - **OpenAI / compatible** — OpenAI, Groq, DeepSeek, Mistral, o un endpoint propio.
    - **Ollama / LM Studio** — `http://<ip-de-tu-pc>:11434/v1`, sin clave, 100 % en tu red.
 3. Pulsa **Probar conexión**. Si responde, el indicador superior pasa a `AURA IA · LLM ON`.
+
+> Para Ollama/LM Studio en tu LAN usa `adb reverse tcp:11434 tcp:11434` y apunta a
+> `http://localhost:11434/v1`. Los rangos `192.168.x.x` **no** se pueden eximir por CIDR en
+> `network_security_config.xml` (solo acepta nombres literales), así que Aura te avisa en `/ia` si
+> configuras HTTP en claro contra una IP de la LAN.
 
 La clave se guarda en `EncryptedSharedPreferences` (AndroidKeyStore, AES256-GCM). **Nunca** va en el
 APK ni en el repositorio, y no se registra en logs.
@@ -82,7 +87,7 @@ Los comandos con `/` **nunca** pasan por el modelo: son deterministas por diseñ
 
 ## Requisitos
 
-- JDK 17+ (el proyecto compila con toolchain de Gradle 9.3.1)
+- JDK 21 (es el que usa el CI; Gradle 9.3.1 lo recomienda)
 - Android SDK con `compileSdk 36` (AGP lo descarga si falta)
 - Un dispositivo o emulador con **API 24+** (target 36)
 
@@ -92,9 +97,10 @@ Los comandos con `/` **nunca** pasan por el modelo: son deterministas por diseñ
 git clone https://github.com/liendomaho-wq/aura-defens-V2.0.0.git
 cd aura-defens-V2.0.0
 
-./gradlew :app:assembleDebug          # APK de depuración
-./gradlew :app:testDebugUnitTest      # tests JVM + Robolectric
-./gradlew :app:assembleRelease        # R8 + shrinkResources (requiere keystore)
+./gradlew :app:assembleDebug              # APK de depuración
+./gradlew :app:testDebugUnitTest          # tests JVM + Robolectric
+./gradlew :app:connectedDebugAndroidTest  # SQLCipher + migraciones (requiere emulador)
+./gradlew :app:assembleRelease            # R8 + shrinkResources (requiere keystore)
 ```
 
 `gradlew` y `gradle/wrapper/gradle-wrapper.jar` están versionados a propósito: el repo debe compilar
@@ -159,13 +165,19 @@ sin esta puerta, una frase se convertía en ejecución de código con privilegio
 ## VPN local: cómo funciona y qué limita
 
 1. `VpnService.Builder` crea un TUN con `10.8.0.2/32` y un DNS virtual `10.8.0.1`.
-2. Las consultas DNS al DNS virtual se parsean (IPv4/UDP) y se responden con **NXDOMAIN real** si el
-   dominio está bloqueado; si no, se reenvían por un socket protegido con `protect()`.
-3. Las IPs bloqueadas se añaden como rutas `/32` al TUN: el paquete entra, se registra y se descarta.
-4. Aura queda excluida del túnel con `addDisallowedApplication` para no auto-interceptarse.
+2. Se enrutan al TUN los **DNS reales de las interfaces físicas** (Wi-Fi/LTE) y se interceptan: si el
+   dominio está bloqueado se responde **NXDOMAIN real**; si no, se reenvía al DNS original del
+   dispositivo con `protect()` (con 1.1.1.1/8.8.8.8 como último recurso).
+3. Todo el TCP IPv4 va por `0.0.0.0/0` al **proxy transparente**: SYN → conexión real protegida +
+   SYN-ACK sintético, datos en ambos sentidos con secuencias y checksums correctos, y **RST** cuando
+   una regla corta el flujo. IPv6 queda fuera del túnel a propósito.
+4. UDP e ICMP se filtran por IP/puerto; los dominios bloqueados se traducen a IPs aprendidas
+   (TTL 30 min) para cortar también a las apps que resuelven por su cuenta.
+5. Aura queda excluida del túnel con `addDisallowedApplication` para no auto-interceptarse.
 
-Limitaciones honestas: es un filtro DNS + rutas `/32`, no un IDS/IPS con inspección profunda. Sin
-root no se puede tocar `iptables` del sistema; con root, la app solo aplica las plantillas firmadas.
+Limitaciones honestas: no descifra TLS (solo lee el SNI del ClientHello, que viaja en claro) y no es
+un IDS/IPS con inspección profunda. Sin root no se puede tocar `iptables` del sistema; con root, la
+app solo aplica las plantillas firmadas de `RootCommandPolicy`.
 
 ## Privacidad y datos
 
@@ -175,7 +187,11 @@ root no se puede tocar `iptables` del sistema; con root, la app solo aplica las 
   dispositivo, ni por backup en la nube ni por transferencia entre dispositivos.
 - Únicas salidas de red: el feed `cisa.gov` (KEV), `dns.google` (DoH opcional), los hosts que tú
   ordenes auditar y —solo si activas el motor LLM— el proveedor que elijas, con la telemetría ya
-  redactada. La base de datos **no está cifrada** en reposo (ver roadmap).
+  redactada.
+- La base forense **está cifrada en reposo** con SQLCipher; la clave SQLCipher se envuelve con una
+  clave AES-GCM que vive en el AndroidKeyStore. Si el KeyStore del dispositivo no puede entregarla,
+  la app arranca con una base **en memoria**, avisa en el panel y **no borra** la base cifrada: los
+  datos siguen en disco para cuando la clave vuelva a estar disponible.
 
 ## Estructura
 
@@ -199,15 +215,15 @@ app/src/main/java/com/aura/mobiledefense/
 
 ## Roadmap
 
-- [ ] Cifrado en reposo de la evidencia (SQLCipher o cifrado por campo con AndroidKeyStore)
-- [ ] Partir `NyxViewModel` (722 líneas) y los canvas de UI en módulos más pequeños
+- [x] Cifrado en reposo de la evidencia (SQLCipher + clave envuelta por AndroidKeyStore)
+- [ ] Partir `NyxViewModel` (813 líneas) y los canvas de UI en módulos más pequeños
 - [ ] Cobertura de tests para los engines que tocan el sistema (ya hay 21 pruebas nuevas de
       firewall y de la política de privilegios)
 - [x] `applicationId` propio (`com.aura.mobiledefense`, alineado con el `namespace`)
 - [x] Modo "IA Online" implementado como LLM real (BYOK) con catálogo cerrado de herramientas
-- [ ] Modelo on-device real: el adaptador `FunctionGemmaToolProvider` y el kit de entrenamiento
-      (`aura-train/`) están listos; falta el motor de inferencia (MediaPipe LLM / llama.cpp) y los
-      pesos en `assets/`
+- [ ] Modelo on-device real: el adaptador `FunctionGemmaToolProvider` está listo y probado; falta
+      el kit de entrenamiento (`aura-train/render_dataset.py`, aún no versionado), el motor de
+      inferencia (MediaPipe LLM / llama.cpp) y los pesos en `assets/`
 - [x] Firewall real: ruta 0.0.0.0/0, proxy TCP, bloqueo por SNI y política DoH/DoT
 - [x] Migraciones de Room 1→2→3 con pruebas instrumentadas
 - [x] `RootCommandPolicy` con la regla 3 implementada y un único `ShellRunner`

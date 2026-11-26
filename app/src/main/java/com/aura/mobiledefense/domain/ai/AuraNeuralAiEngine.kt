@@ -127,7 +127,10 @@ class AuraNeuralAiEngine(
             query = userQuery,
             title = title,
             subtitle = subtitle,
-            visualKind = chooseVisualTopology(toolResult, patches.size),
+            target = toolResult.target,
+            // La topología la elige el engine que ha medido: antes esta función devolvía siempre
+            // NEURAL_SYNAPTIC_LATTICE y los otros 5 renderers del canvas eran código muerto.
+            visualKind = resolveVisualTopology(toolResult, severity),
             severityScore = severity,
             narrative = narrative,
             technicalFindings = findings,
@@ -548,10 +551,20 @@ class AuraNeuralAiEngine(
         )
     }
 
-    private fun chooseVisualTopology(toolResult: ToolExecutionResult, patchCount: Int): VisualTopologyKind {
+    /**
+     * Topología visual coherente con lo que se acaba de medir. Se respeta la que propone el engine
+     * ([ToolExecutionResult.suggestedVisual]) y solo se ajusta cuando la severidad pide otra lectura
+     * (una anomalía de red se ve mejor como interferencia de espectro que como malla neuronal).
+     */
+    private fun resolveVisualTopology(
+        toolResult: ToolExecutionResult,
+        severity: Float
+    ): VisualTopologyKind {
+        val suggested = toolResult.suggestedVisual
         return when {
-            toolResult.toolId == "PORT_PROBE" && patchCount > 0 -> VisualTopologyKind.NEURAL_SYNAPTIC_LATTICE
-            toolResult.toolId == "PROTOCOL_STRATA" -> VisualTopologyKind.PROTOCOL_STRATA
+            toolResult.toolId == "SERVER_MONITOR" && severity >= 0.6f -> VisualTopologyKind.SPECTRUM_INTERFERENCE
+            toolResult.toolId == "CRYPTO_JWT" -> VisualTopologyKind.ENTROPY_MATRIX
+            suggested != VisualTopologyKind.NEURAL_SYNAPTIC_LATTICE -> suggested
             else -> VisualTopologyKind.NEURAL_SYNAPTIC_LATTICE
         }
     }

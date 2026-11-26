@@ -71,6 +71,8 @@ fun PrivilegeHorizonBar(
     rootState: RootCapabilityState,
     knowledgeStats: ThreatKnowledgeStats,
     monitorBanner: String?,
+    /** true/false = base cifrada o no; null = todavía no se sabe. */
+    databaseEncrypted: Boolean? = null,
     onSwitchPrivilegeMode: (PrivilegeMode) -> Unit,
     onToggleEngineMode: (AiEngineMode) -> Unit,
     onOpenLlmSettings: () -> Unit,
@@ -268,6 +270,15 @@ fun PrivilegeHorizonBar(
             )
         }
 
+        if (databaseEncrypted == false) {
+            Text(
+                text = "⚠ EVIDENCIA SIN CIFRAR · el AndroidKeyStore no entrega la clave",
+                style = MaterialTheme.typography.labelSmall.copy(color = NyxAmber),
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .testTag("db_encryption_warning")
+            )
+        }
         if (!monitorBanner.isNullOrBlank()) {
             Text(
                 text = "⚠ $monitorBanner",

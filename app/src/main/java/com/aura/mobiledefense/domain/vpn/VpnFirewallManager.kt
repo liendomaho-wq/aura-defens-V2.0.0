@@ -54,6 +54,16 @@ object VpnFirewallManager {
     @Volatile
     private var lastDnsRtt = 0L
 
+    /** DNS reales del dispositivo, fijados por el servicio al levantar el túnel. */
+    @Volatile
+    private var upstreamDnsLabel: String = "Automático (DNS del sistema)"
+
+    fun setUpstreamDns(servers: List<String>) {
+        upstreamDnsLabel = if (servers.isEmpty()) "Automático (DNS del sistema)"
+        else servers.joinToString(", ") { "$it:53" }
+        publishTelemetry()
+    }
+
     suspend fun ensureInitialized(context: Context) = withContext(Dispatchers.IO) {
         val dao = NyxDatabase.getInstance(context).forensicSessionDao()
         if (dao.countFirewallRules() == 0) {
@@ -117,6 +127,15 @@ object VpnFirewallManager {
             dao.upsertFirewallRules(seedRules)
         }
         refreshRulesFromDao(dao)
+    }
+
+    /**
+     * Sustituye las reglas en memoria sin tocar Room. Lo usan las pruebas del camino de datos
+     * (que no tienen Android/Room) y sirve para inyectar un conjunto de reglas ya cargado.
+     */
+    internal fun replaceRulesForTest(rules: List<FirewallRuleEntity>) {
+        _rules.value = rules
+        publishTelemetry()
     }
 
     suspend fun refreshRulesFromDao(dao: ForensicSessionDao) = withContext(Dispatchers.IO) {
@@ -348,7 +367,7 @@ object VpnFirewallManager {
         _telemetry.value = com.aura.mobiledefense.data.model.VpnFirewallTelemetry(
             isRunning = vpnRunning,
             tunAddress = "10.8.0.2/32",
-            upstreamDns = "1.1.1.1:53",
+            upstreamDns = upstreamDnsLabel,
             startedAtMs = startedAt,
             packetsInspected = inspectedCount.get(),
             packetsAllowed = allowedCount.get(),

@@ -14,7 +14,7 @@ import androidx.room.migration.Migration
         ThreatRuleEntity::class,
         FirewallRuleEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class NyxDatabase : RoomDatabase() {
@@ -29,6 +29,14 @@ abstract class NyxDatabase : RoomDatabase() {
          * la base guarda evidencia forense y no hay fallback destructivo.
          */
         private val MIGRATIONS: Array<Migration> = AuraMigrations.ALL
+
+        /**
+         * Base **en memoria** para cuando el AndroidKeyStore no puede entregar (ni crear) la clave
+         * de SQLCipher: la app sigue funcionando y avisa de que la evidencia no se persistirá, en
+         * vez de morir en el arranque. Nunca se usa para sobrescribir la base cifrada existente.
+         */
+        fun getInMemory(context: Context): NyxDatabase =
+            Room.inMemoryDatabaseBuilder(context.applicationContext, NyxDatabase::class.java).build()
 
         fun getInstance(context: Context): NyxDatabase {
             val current = INSTANCE

@@ -27,6 +27,16 @@ class RootCommandPolicyTest {
     }
 
     @Test
+    fun `no mitigation can weaken the device security posture`() {
+        // Aura es defensiva: ninguna plantilla firmada puede poner SELinux en Permissive ni crear
+        // reglas ACCEPT por defecto.
+        assertTrue(!allowed("setenforce 0"))
+        assertTrue(!allowed("setenforce 0 && getenforce"))
+        assertTrue(allowed("setenforce 1"))
+        assertTrue(allowed("setenforce 1 && getenforce"))
+    }
+
+    @Test
     fun `aura mitigations are allowed but forged ones are not`() {
         assertTrue(allowed("setenforce 1 && getenforce"))
         assertTrue(

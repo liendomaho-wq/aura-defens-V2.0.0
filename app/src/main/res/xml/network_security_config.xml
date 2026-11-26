@@ -14,11 +14,19 @@
         </trust-anchors>
     </base-config>
 
-    <!-- Servidores propios en la red local (Ollama, LM Studio, vLLM). -->
+    <!--
+      Servidores propios en la red local (Ollama, LM Studio, vLLM).
+      OJO: <domain> solo acepta nombres literales, NO rangos CIDR. Poner 192.168.0.0 aquí no exime a
+      192.168.1.10: solo exime a ese nombre exacto. Por eso solo se listan direcciones concretas y el
+      resto depende de `android:usesCleartextTraffic` en el manifest, que está en false.
+
+      La app AVISA en /ia cuando el endpoint configurado es HTTP no local, en vez de fallar en
+      silencio con un error de red opaco.
+    -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="true">192.168.0.0</domain>
-        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain><!-- host del emulador Android -->
+        <domain includeSubdomains="false">10.8.0.2</domain><!-- propio túnel de Aura -->
     </domain-config>
 </network-security-config>

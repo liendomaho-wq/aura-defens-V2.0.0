@@ -6,7 +6,6 @@ import android.security.keystore.KeyProperties
 import android.util.Log
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
-import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -27,8 +26,9 @@ import android.util.Base64
  * - La clave real de SQLCipher es aleatoria (32 bytes de [SecureRandom]).
  * - Esa clave se cifra con una clave AES-GCM que vive **en el AndroidKeyStore** y nunca sale de él.
  * - El blob cifrado va a SharedPreferences; sin el KeyStore (otro móvil, otro usuario) es basura.
- * - Si algo falla al abrir, se avisa por log y se cae al modo sin cifrar **solo** para no dejar la
- *   app inservible: nunca se borra la base del usuario.
+ * - Si el KeyStore no entrega la clave (o el blob no descifra), [factory] lanza y el ViewModel abre
+ *   una base **en memoria** avisando en la UI: nunca se abre en claro una base cifrada existente y
+ *   nunca se borra. El archivo original queda intacto para cuando la clave vuelva.
  */
 object AuraDatabaseCipher {
 
@@ -42,17 +42,51 @@ object AuraDatabaseCipher {
     @Volatile
     private var passphrase: CharArray? = null
 
+    /** Motivo por el que la base quedó sin cifrar, o null si está cifrada. */
+    @Volatile
+    var lastFaultReason: String? = null
+        private set
+
+    @Volatile
+    private var nativeLoaded = false
+
+    /**
+     * SQLCipher trae su propia librería nativa y hay que cargarla antes de abrir la base.
+     * [com.aura.mobiledefense.MainActivity] lo hace al arrancar, pero el servicio VPN, el monitor
+     * en segundo plano y los tests pueden tocar Room sin pasar por la Activity.
+     */
+    private fun ensureNativeLibrary() {
+        if (nativeLoaded) return
+        synchronized(this) {
+            if (!nativeLoaded) {
+                runCatching { System.loadLibrary("sqlcipher") }
+                    .onFailure { Log.w(TAG, "No se pudo cargar libsqlcipher: ${it.message}") }
+                nativeLoaded = true
+            }
+        }
+    }
+
     /** ¿Está la base realmente cifrada? Lo consulta el aviso de seguridad de la UI. */
     fun isEncrypted(): Boolean = passphrase != null
 
     fun factory(context: Context): SupportSQLiteOpenHelper.Factory {
+        ensureNativeLibrary()
         val key = runCatching { loadOrCreatePassphrase(context.applicationContext) }
-            .onFailure { Log.e(TAG, "No se pudo obtener la clave del KeyStore; base sin cifrar", it) }
+            .onFailure {
+                lastFaultReason = it.message ?: "KeyStore no disponible: ${it.javaClass.simpleName}"
+                Log.e(TAG, "No se pudo obtener la clave del KeyStore", it)
+            }
             .getOrNull()
 
+        // Nunca devolver un factory en claro: la base en disco puede estar cifrada con SQLCipher y
+        // abrirla con el framework SQLite solo lograría "file is not a database" en el primer
+        // acceso, o peor, crear una nueva base en claro creyendo que está cifrada. Se lanza y el
+        // llamador (NyxDatabase.getInstance -> NyxViewModel) cae a una base en memoria con aviso.
         if (key == null || key.isEmpty()) {
-            return FrameworkSQLiteOpenHelperFactory()
+            if (lastFaultReason == null) lastFaultReason = "Sin clave utilizable en el AndroidKeyStore"
+            throw IllegalStateException(lastFaultReason)
         }
+        lastFaultReason = null
         passphrase = key
         // SQLCipher 4.x pide los bytes UTF-8 de la clave, no un CharArray.
         return SupportOpenHelperFactory(String(key).toByteArray(Charsets.UTF_8))
@@ -80,8 +114,27 @@ object AuraDatabaseCipher {
 
         val existing = prefs.getString(PREF_BLOB, null)
         if (existing != null && master != null) {
-            runCatching { return String(decrypt(master, existing), Charsets.UTF_8).toCharArray() }
-                .onFailure { Log.e(TAG, "Blob de clave ilegible; se genera uno nuevo", it) }
+            val decrypted = runCatching { decrypt(master, existing) }.getOrNull()
+            if (decrypted != null) {
+                return String(decrypted, Charsets.UTF_8).toCharArray()
+            }
+            // La clave existe pero no se puede descifrar (ROM modificada, backup restaurado en otro
+            // móvil, KeyStore reseteado…). Sobrescribirla dejaría la base forense ilegible para
+            // siempre. Se conserva el blob y se aborta: la app arranca con una base en memoria
+            // (NyxDatabase.getInMemory), la UI avisa, y los datos cifrados siguen en disco hasta que
+            // la clave vuelva a estar disponible.
+            throw IllegalStateException(
+                "Clave de la base forense ilegible con este AndroidKeyStore; se conserva el blob original"
+            )
+        }
+
+        // Si hay un blob guardado pero el KeyStore no tiene la clave maestra (por ejemplo, el
+        // usuario borró el llavero del sistema), NO se puede recuperar: mismo caso catastrófico que
+        // un descifrado fallido. Se aborta sin tocar el blob.
+        if (existing != null && master == null) {
+            throw IllegalStateException(
+                "La clave maestra del AndroidKeyStore ya no existe; se conserva el blob original"
+            )
         }
 
         val secretKey = master ?: generateMasterKey()

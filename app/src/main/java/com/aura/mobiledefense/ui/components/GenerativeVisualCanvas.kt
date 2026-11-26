@@ -73,10 +73,11 @@ fun GenerativeVisualCanvas(
 ) {
     val modeAccent = if (privilegeMode == PrivilegeMode.ROOT) NyxAmber else NyxCyan
 
-    if (scene == null ||
-        scene.visualKind == VisualTopologyKind.NEURAL_SYNAPTIC_LATTICE ||
-        scene.visualKind == VisualTopologyKind.CONSTELLATION_MESH
-    ) {
+    // Solo la malla neuronal usa el canvas interactivo de nodos. El resto de topologías (matriz de
+    // entropía, espectro, estratos de protocolo, hélice binaria, flujo de vectores de ataque y
+    // constelación) tienen su propio renderer más abajo; antes esta condición las desviaba todas al
+    // mismo dibujo y los renderers nunca se ejecutaban.
+    if (scene == null || scene.visualKind == VisualTopologyKind.NEURAL_SYNAPTIC_LATTICE) {
         InteractiveNeuralNetworkGraph(
             sceneKey = scene?.id ?: "boot",
             nodes = scene?.nodes.orEmpty(),
@@ -197,7 +198,11 @@ fun GenerativeVisualCanvas(
                 VisualTopologyKind.ATTACK_VECTOR_FLOW -> {
                     drawAttackVectorFlow(scene, size, zoom, panOffset, phase, pulse, modeAccent, selectedNodeId, highlightLayer, pointerField, textMeasurer)
                 }
-                else -> Unit
+                // CONSTELLATION_MESH y cualquier topología futura: campo ambiente + nodos, que es el
+                // render más legible cuando no hay un motivo específico.
+                else -> {
+                    drawConstellationLightNodes(scene, size, zoom, panOffset, phase, modeAccent, selectedNodeId, highlightLayer, pointerField, textMeasurer)
+                }
             }
 
             if (isAnalyzing) {

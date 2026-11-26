@@ -147,6 +147,7 @@ fun NyxWorkspaceScreen(
                 rootState = rootState,
                 knowledgeStats = knowledgeStats,
                 monitorBanner = monitorBanner,
+                databaseEncrypted = viewModel.databaseEncrypted,
                 onSwitchPrivilegeMode = { next -> viewModel.switchPrivilegeMode(next) },
                 onToggleEngineMode = { nextEngine -> viewModel.switchEngineMode(nextEngine) },
                 onOpenLlmSettings = { viewModel.setLlmSettingsVisible(true) },

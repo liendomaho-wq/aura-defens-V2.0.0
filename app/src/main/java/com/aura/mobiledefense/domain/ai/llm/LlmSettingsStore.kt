@@ -42,17 +42,47 @@ class LlmSettingsStore private constructor(context: Context) {
             "gemini-2.5-pro"
         )
 
+        /**
+         * Presets del proveedor OpenAI-compatible. Los de LAN usan `localhost`, que **sí** está
+         * exento en network_security_config para cleartext. El usuario debe cambiar la IP o, mejor,
+         * exponer Ollama/LM Studio con `adb reverse tcp:11434 tcp:11434` (así `localhost:11434`
+         * funciona desde el teléfono sin abrir HTTP en la red).
+         */
         val openAiCompatiblePresets = listOf(
             Triple("OpenAI", "https://api.openai.com/v1", "gpt-4.1-mini"),
             Triple("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
             Triple("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
             Triple("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
-            Triple("Ollama local", "http://192.168.1.10:11434/v1", "llama3.1:8b"),
-            Triple("LM Studio local", "http://192.168.1.10:1234/v1", "local-model")
+            Triple("Ollama (adb reverse)", "http://localhost:11434/v1", "llama3.1:8b"),
+            Triple("LM Studio (adb reverse)", "http://localhost:1234/v1", "local-model")
         )
+
+        /** Aviso legible cuando el endpoint es HTTP y no está exento por la política de red. */
+        fun cleartextWarning(baseUrl: String): String? {
+            val url = baseUrl.trim().lowercase()
+            if (!url.startsWith("http://")) return null
+            val host = url.removePrefix("http://").substringBefore('/').substringBefore(':')
+            val exempt = host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2" || host == "10.8.0.2"
+            return if (exempt) null else
+                "HTTP en claro hacia $host está bloqueado por android:usesCleartextTraffic=false. " +
+                    "Usa HTTPS, localhost con `adb reverse`, o sirve el modelo tras un proxy TLS."
+        }
     }
 
-    private val secure: SharedPreferences = runCatching {
+    /** true cuando la clave API vive en un almacén cifrado por el AndroidKeyStore. */
+    @Volatile
+    var secureStorageAvailable: Boolean = false
+        private set
+
+    /**
+     * Clave API en memoria. Es el **único** respaldo cuando el KeyStore no está disponible: si no
+     * se puede cifrar, no se escribe en disco. Antes este camino caía a SharedPreferences normales,
+     * que dejan la clave en texto claro en /data/data/.../shared_prefs.
+     */
+    @Volatile
+    private var volatileApiKey: String = ""
+
+    private val secure: SharedPreferences? = runCatching {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -63,12 +93,9 @@ class LlmSettingsStore private constructor(context: Context) {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         ) as SharedPreferences
-    }.getOrElse {
-        // Some heavily modified ROMs fail to open the keystore. Degrade to a memory-only store so
-        // the app keeps working and never silently writes a key in cleartext.
-        Log.w(TAG, "EncryptedSharedPreferences unavailable, using memory-only key storage: ${it.message}")
-        context.getSharedPreferences("aura_llm_volatile", Context.MODE_PRIVATE)
-    }
+    }.onFailure {
+        Log.w(TAG, "EncryptedSharedPreferences no disponible: clave solo en memoria (${it.message})")
+    }.getOrNull()
 
     private val plain: SharedPreferences = context.getSharedPreferences(PREFS_PLAIN, Context.MODE_PRIVATE)
 
@@ -87,7 +114,9 @@ class LlmSettingsStore private constructor(context: Context) {
             .getOrDefault(LlmBackendKind.CLOUD),
         provider = runCatching { LlmProviderId.valueOf(plain.getString("provider", "GEMINI")!!) }
             .getOrDefault(LlmProviderId.GEMINI),
-        apiKey = runCatching { secure.getString("api_key", "").orEmpty() }.getOrDefault(""),
+        apiKey = secure?.let { prefs ->
+            runCatching { prefs.getString("api_key", "").orEmpty() }.getOrDefault("")
+        } ?: volatileApiKey,
         model = plain.getString("model", "").orEmpty(),
         baseUrl = plain.getString("base_url", "").orEmpty(),
         temperature = plain.getFloat("temperature", 0.2f),
@@ -111,11 +140,32 @@ class LlmSettingsStore private constructor(context: Context) {
             putBoolean("use_intent", next.useForIntent)
             putBoolean("use_narrative", next.useForNarrative)
         }.apply()
-        runCatching { secure.edit().putString("api_key", next.apiKey).apply() }
+        val encryptedStore = secure
+        if (encryptedStore != null) {
+            // La clave se cifra con una clave AES-GCM que nunca sale del AndroidKeyStore.
+            runCatching { encryptedStore.edit().putString("api_key", next.apiKey).apply() }
+                .onSuccess { secureStorageAvailable = true }
+                .onFailure {
+                    // Si no se puede escribir, no se debe cargar luego la clave ANTERIOR: la vieja
+                    // sería distinta de la que el usuario acaba de teclear. Se borra la entrada y
+                    // la clave vive solo en memoria, como cuando no hay KeyStore.
+                    runCatching { encryptedStore.edit().remove("api_key").apply() }
+                    volatileApiKey = next.apiKey
+                    secureStorageAvailable = false
+                }
+        } else {
+            // Sin KeyStore: la clave NO toca el disco, se queda en memoria. Aura lo avisa en /ia.
+            volatileApiKey = next.apiKey
+            secureStorageAvailable = false
+        }
         _settings.value = next
     }
 
-    fun clearKey() = update { it.copy(apiKey = "", enabled = false) }
+    fun clearKey() {
+        volatileApiKey = ""
+        runCatching { secure?.edit()?.remove("api_key")?.apply() }
+        update { it.copy(apiKey = "", enabled = false) }
+    }
 
     /** Effective model name, falling back to the provider default. */
     fun effectiveModel(settings: LlmSettings): String = when {

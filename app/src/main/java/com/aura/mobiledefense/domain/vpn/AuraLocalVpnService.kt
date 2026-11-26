@@ -28,6 +28,7 @@ import java.net.Socket
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.NetworkInterface
 
 private const val TAG = "AuraLocalVpnService"
 private const val CHANNEL_ID = "aura_local_vpn_channel"
@@ -56,6 +57,10 @@ class AuraLocalVpnService : VpnService() {
     private var tunnelJob: Job? = null
     private var tunInterface: ParcelFileDescriptor? = null
     private val tunWriteLock = Any()
+
+    /** DNS reales del dispositivo; se rellena al levantar el túnel. */
+    @Volatile
+    private var activeUpstreamDns: List<String> = emptyList()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -138,13 +143,29 @@ class AuraLocalVpnService : VpnService() {
                     .addDnsServer(VIRTUAL_DNS_IP)
                     .addRoute(VIRTUAL_DNS_IP, 32)
 
-                // Ruta completa: sin esto el TUN solo ve las IPs ya bloqueadas (un sinkhole) y
-                // bloquear un dominio o un puerto no tendría efecto sobre el tráfico real.
-                // Con 0.0.0.0/0 todo el tráfico pasa por el proxy de sockets, que aplica las
-                // reglas del firewall paquete a paquete.
+                // DNS de todas las interfaces reales del dispositivo, enrutados por el TUN para
+                // interceptarlos. Sin esto, el sistema seguiría usando el DNS de la Wi-Fi/LTE sin
+                // pasar por Aura y el firewall de dominios no se aplicaría a nadie salvo a quien se
+                // configure 10.8.0.1 a mano.
+                val upstreamDns = collectPhysicalDnsServers()
+                activeUpstreamDns = upstreamDns
+                upstreamDns.forEach { dns ->
+                    runCatching { builder.addRoute(dns, 32) }
+                }
+                VpnFirewallManager.setUpstreamDns(upstreamDns)
+
+                // Ruta completa: todo el tráfico IPv4 entra al proxy transparente, que aplica las
+                // reglas del firewall paquete a paquete y reenvía lo permitido por un socket real.
                 // IPv6 queda fuera del túnel a propósito: el proxy solo habla IPv4 y enrutar :: sin
                 // manejarlo cortaría toda la conectividad v6 del dispositivo.
                 runCatching { builder.addRoute("0.0.0.0", 0) }
+                // Los sockets reales del proxy se abren con `VpnService.protect()`, así que salen por
+                // la red física y no vuelven a entrar al TUN. El TUN se marca como no-medido para que
+                // el ahorro de batería no lo trate como red de pago.
+                runCatching {
+                    val setMetered = Builder::class.java.getMethod("setMetered", Boolean::class.javaPrimitiveType)
+                    setMetered.invoke(builder, false)
+                }
 
                 // Prevent Aura itself from looping inside the VPN
                 runCatching { builder.addDisallowedApplication(packageName) }
@@ -187,6 +208,7 @@ class AuraLocalVpnService : VpnService() {
                             parsed = parsed,
                             packet = packetCopy,
                             transport = tcpTransport,
+                            downlink = { reply -> writePacketToTun(output, reply) },
                             onBlocked = { reason ->
                                 VpnFirewallManager.recordPacketEvent(
                                     protocol = "TCP",
@@ -273,8 +295,16 @@ class AuraLocalVpnService : VpnService() {
         }
 
         val startMs = System.currentTimeMillis()
-        val upstreamResponse = forwardDnsUpstream(dnsQuery, UPSTREAM_DNS_PRIMARY)
-            ?: forwardDnsUpstream(dnsQuery, UPSTREAM_DNS_SECONDARY)
+        val candidates = (activeUpstreamDns + listOf(UPSTREAM_DNS_PRIMARY, UPSTREAM_DNS_SECONDARY)).distinct()
+        var upstreamUsed = candidates.first()
+        var upstreamResponse: ByteArray? = null
+        for (server in candidates) {
+            upstreamResponse = forwardDnsUpstream(dnsQuery, server)
+            if (upstreamResponse != null) {
+                upstreamUsed = server
+                break
+            }
+        }
         val rtt = (System.currentTimeMillis() - startMs).coerceAtLeast(1L)
 
         if (upstreamResponse != null) {
@@ -297,12 +327,44 @@ class AuraLocalVpnService : VpnService() {
                 destination = domain,
                 port = 53,
                 action = FirewallPacketEventAction.ALLOWED,
-                reason = "Resuelto vía $UPSTREAM_DNS_PRIMARY",
+                reason = "Resuelto vía $upstreamUsed",
                 bytesInDelta = rawPacket.size.toLong(),
                 bytesOutDelta = replyPacket.size.toLong(),
                 rttMs = rtt
             )
         }
+    }
+
+    /**
+     * DNS reales que el dispositivo estaba usando antes de levantar el TUN. Se consultan por las
+     * interfaces físicas (no la nuestra) en vez de asumir 1.1.1.1: así funcionan las redes
+     * corporativas y los DNS locales, y el usuario no pierde resolución al activar la VPN.
+     */
+    private fun collectPhysicalDnsServers(): List<String> {
+        val result = linkedSetOf<String>()
+        runCatching {
+            NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback && it.name != "tun0" && !it.name.startsWith("tun") }
+                .forEach { iface -> result.addAll(readDnsForInterface(iface.name)) }
+        }
+        val filtered = result.filter { ip -> ip != VIRTUAL_DNS_IP && !ip.startsWith("127.") }
+        return if (filtered.isEmpty()) listOf(UPSTREAM_DNS_PRIMARY, UPSTREAM_DNS_SECONDARY) else filtered.take(3)
+    }
+
+    private fun readDnsForInterface(name: String): List<String> {
+        val out = mutableListOf<String>()
+        runCatching {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            cm.allNetworks.forEach { net ->
+                val lp = cm.getLinkProperties(net) ?: return@forEach
+                if (lp.interfaceName != name) return@forEach
+                lp.dnsServers.forEach { dns ->
+                    val host = dns.hostAddress ?: return@forEach
+                    if (dns is java.net.Inet4Address) out.add(host)
+                }
+            }
+        }
+        return out.distinct()
     }
 
     /** Conexiones reales del proxy, siempre fuera del túnel para no entrar en bucle. */
@@ -356,6 +418,7 @@ class AuraLocalVpnService : VpnService() {
     private fun stopTunnel() {
         tunnelJob?.cancel()
         tunnelJob = null
+        activeUpstreamDns = emptyList()
         TcpProxyEngine.closeAll()
         runCatching { tunInterface?.close() }
         tunInterface = null

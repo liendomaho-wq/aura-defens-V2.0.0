@@ -84,6 +84,7 @@ class DatabaseEncryptionTest {
     @Test
     fun sqlcipherIsActuallyCompiledIn() {
         val helper = AuraDatabaseCipher.factory(context).create(
+            context,
             androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name("probe.db")
                 .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(1) {

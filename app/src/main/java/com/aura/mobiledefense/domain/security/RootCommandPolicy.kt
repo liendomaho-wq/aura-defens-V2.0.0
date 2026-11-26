@@ -46,8 +46,10 @@ object RootCommandPolicy {
      * They are matched literally (after whitespace normalisation) so no user text can reuse them.
      */
     private val mitigationTemplates = setOf(
+        // `setenforce 0` (SELinux a Permissive) queda fuera a propósito: Aura es una herramienta
+        // defensiva y su propio motor de integridad penaliza Permissive. No puede existir un camino
+        // firmado que reduzca la postura de seguridad del dispositivo.
         "setenforce 1",
-        "setenforce 0",
         "setenforce 1 && getenforce",
         "iptables -c input -p tcp --dport 5555 -j drop 2>/dev/null || iptables -i input -p tcp --dport 5555 -j drop",
         "iptables -i input -p tcp --dport 5555 -j drop"

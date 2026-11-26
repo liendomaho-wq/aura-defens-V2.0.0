@@ -1,9 +1,10 @@
 package com.aura.mobiledefense.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "forensic_sessions")
+@Entity(tableName = "forensic_sessions", indices = [Index("timestamp")])
 data class ForensicSessionEntity(
     @PrimaryKey val id: String,
     val timestamp: Long,
@@ -33,7 +34,7 @@ data class MonitorTargetEntity(
     val isActive: Boolean
 )
 
-@Entity(tableName = "anomaly_events")
+@Entity(tableName = "anomaly_events", indices = [Index("target"), Index("timestamp")])
 data class AnomalyEventEntity(
     @PrimaryKey val id: String,
     val target: String,
@@ -43,7 +44,7 @@ data class AnomalyEventEntity(
     val timestamp: Long
 )
 
-@Entity(tableName = "threat_rules")
+@Entity(tableName = "threat_rules", indices = [Index("vendorOrCategory")])
 data class ThreatRuleEntity(
     @PrimaryKey val ruleId: String,
     val source: String,
@@ -55,7 +56,7 @@ data class ThreatRuleEntity(
     val updatedAt: Long
 )
 
-@Entity(tableName = "firewall_rules")
+@Entity(tableName = "firewall_rules", indices = [Index("pattern")])
 data class FirewallRuleEntity(
     @PrimaryKey val id: String,
     val pattern: String,

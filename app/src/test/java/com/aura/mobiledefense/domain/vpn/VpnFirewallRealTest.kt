@@ -31,38 +31,36 @@ class VpnFirewallRealTest {
         return out.toByteArray()
     }
 
+    /** ClientHello mínimo pero **válido**: longitudes de 2 bytes en todos los campos. */
     private fun clientHello(host: String): ByteArray {
         val sni = host.toByteArray(Charsets.US_ASCII)
-        val serverName = byteStream {
-            write(byteArrayOf(0x00, ((sni.size + 3) shr 8).toByte(), ((sni.size + 3) and 0xFF).toByte()))
-            write(0x00)                                     // host_name
-            write((sni.size shr 8) and 0xFF)
-            write((sni.size) and 0xFF)
-            write(sni)
+        fun stream(block: java.io.OutputStream.() -> Unit): ByteArray =
+            java.io.ByteArrayOutputStream().also { it.block() }.toByteArray()
+        fun java.io.OutputStream.u16(v: Int) { write((v shr 8) and 0xFF); write(v and 0xFF) }
+        fun java.io.OutputStream.u24(v: Int) { write((v shr 16) and 0xFF); write((v shr 8) and 0xFF); write(v and 0xFF) }
+
+        val serverName = stream {
+            u16(sni.size + 3)              // longitud de la lista de nombres
+            write(0x00)                     // name_type = host_name
+            u16(sni.size)
+            write(sni, 0, sni.size)
         }
-        val extension = byteStream {
-            byteArrayOf(0x00, 0x00).let { write(it, 0, it.size) }                  // ext type: server_name
-            write((serverName.size shr 8) and 0xFF)
-            write((serverName.size) and 0xFF)
-            write(serverName)
+        val extension = stream {
+            u16(0x0000)                     // extensión server_name
+            u16(serverName.size)
+            write(serverName, 0, serverName.size)
         }
-        val hello = byteStream {
-            byteArrayOf(0x03, 0x03).let { write(it, 0, it.size) }                  // legacy_version TLS 1.2
-            ByteArray(32).let { write(it, 0, it.size) }                            // random
-            write(0x00)                                     // session id len
-            byteArrayOf(0x00, 0x02, 0x13, 0x01).let { write(it, 0, it.size) }      // cipher suites
-            byteArrayOf(0x01, 0x00).let { write(it, 0, it.size) }                  // compression
-            write((extension.size shr 8) and 0xFF)
-            write((extension.size) and 0xFF)
-            write(extension)
+        val hello = stream {
+            u16(0x0303)                     // legacy_version TLS 1.2
+            write(ByteArray(32), 0, 32)     // random
+            write(0x00)                     // session id vacío
+            u16(2); u16(0x1301)             // un cipher suite (TLS_AES_128_GCM_SHA256)
+            write(0x01); write(0x00)        // compresión: null
+            u16(extension.size)
+            write(extension, 0, extension.size)
         }
-        return byteStream {
-            write(0x16)                                     // handshake record
-            byteArrayOf(0x03, 0x01).let { write(it, 0, it.size) }
-            write((hello.size shr 8) and 0xFF)
-            write((hello.size) and 0xFF)
-            write(hello)
-        }
+        val handshake = stream { write(0x01); u24(hello.size); write(hello, 0, hello.size) }
+        return stream { write(0x16); u16(0x0301); u16(handshake.size); write(handshake, 0, handshake.size) }
     }
 
     @Test
