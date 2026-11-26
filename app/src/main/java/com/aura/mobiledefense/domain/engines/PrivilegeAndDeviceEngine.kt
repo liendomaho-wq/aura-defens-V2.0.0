@@ -126,7 +126,7 @@ class PrivilegeAndDeviceEngine(private val context: Context) {
                 sb.appendLine("=== TELEMETRÍA KERNEL / ROOT (su) ===")
                 if (rootState.verified) {
                     val kernelTelemetry = runSuCommand(
-                        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); echo '---MOUNTS---'; mount; echo '---PROCS---'; ps -A -Z 2>/dev/null",
+                        "uname -a; echo '---lsmod---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); echo '---mounts---'; mount; echo '---procs---'; ps -A -Z 2>/dev/null",
                         timeoutMs = 7000L
                     )
                     sb.appendLine(kernelTelemetry.stdout.ifBlank { kernelTelemetry.stderr })

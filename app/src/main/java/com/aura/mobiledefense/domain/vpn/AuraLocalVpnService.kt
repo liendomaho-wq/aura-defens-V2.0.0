@@ -186,6 +186,11 @@ class AuraLocalVpnService : VpnService() {
         if (tunnelJob?.isActive == true) return
         tunnelJob = serviceScope.launch {
             VpnFirewallManager.ensureInitialized(applicationContext)
+            // Las reglas de kernel por app no sobreviven a un reinicio del dispositivo:
+            // se reaplican al levantar el túnel. Sin root devuelve 0 sin tocar nada.
+            runCatching { AppFirewallEngine.applyPersistedRules(applicationContext) }
+                .onSuccess { n -> Log.i(TAG, "AppFirewallEngine: $n regla(s) por app reaplicadas en el kernel") }
+                .onFailure { Log.w(TAG, "AppFirewallEngine: no se pudieron reaplicar reglas por app", it) }
             try {
                 val builder = Builder()
                     .setSession("Aura Defense Local VPN")

@@ -59,11 +59,33 @@ class RootCommandPolicyTest {
     }
 
     @Test
+    fun `signed app owner rules are accepted in exact form only`() {
+        assertTrue(allowed("iptables -I OUTPUT -m owner --uid-owner 10042 -j DROP"))
+        assertTrue(allowed("iptables -C OUTPUT -m owner --uid-owner 10042 -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner 10042 -j DROP"))
+        assertTrue(allowed("iptables -D OUTPUT -m owner --uid-owner 10042 -j DROP"))
+        assertTrue(allowed("iptables -i output -m owner --uid-owner 10345 -j drop"))
+        // UID < 10000 (root/sistema): jamás, aunque la estructura sea exacta.
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 0 -j DROP"))
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 9999 -j DROP"))
+        // Variantes peligrosas: otra cadena, otro target, flags extra, uid con inyección.
+        assertTrue(denied("iptables -I INPUT -m owner --uid-owner 10042 -j DROP"))
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 10042 -j ACCEPT"))
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 10042 -j RETURN"))
+        assertTrue(denied("iptables -I OUTPUT -p tcp -m owner --uid-owner 10042 -j DROP"))
+        assertTrue(denied("iptables -A OUTPUT -m owner --uid-owner 10042 -j DROP"))
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 10042 -m state --state NEW -j DROP"))
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 10042 -j DROP; reboot"))
+        assertTrue(denied("iptables -I OUTPUT -m owner --uid-owner 10042 -m owner --uid-owner 0 -j DROP"))
+        // La forma combinada exige el MISMO uid en ambas mitades.
+        assertTrue(denied("iptables -C OUTPUT -m owner --uid-owner 10042 -j DROP 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner 10099 -j DROP"))
+    }
+
+    @Test
     fun `internal inspection templates have no artificial line caps`() {
         // Las auditorías no se truncan por capricho: el techo real es ShellRunner (12 000 chars).
         assertTrue(allowed("id && getenforce && uname -a && ps -A -Z"))
-        assertTrue(allowed("ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null"))
-        assertTrue(allowed("uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); echo '---MOUNTS---'; mount; echo '---PROCS---'; ps -A -Z 2>/dev/null"))
+        assertTrue(allowed("ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---ip-neigh---'; ip neigh show 2>/dev/null; echo '---iptables---'; iptables -L -n 2>/dev/null"))
+        assertTrue(allowed("uname -a; echo '---lsmod---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); echo '---mounts---'; mount; echo '---procs---'; ps -A -Z 2>/dev/null"))
     }
 
     @Test

@@ -28,3 +28,7 @@
 -keep class net.zetetic.database.sqlcipher.** { *; }
 -keep class net.zetetic.database.** { *; }
 -dontwarn net.zetetic.**
+
+# Tink (dependencia de Firebase/crypto) solo usa las anotaciones errorprone en tiempo
+# de compilación; no existen en runtime y R8 falla si no se silencian.
+-dontwarn com.google.errorprone.annotations.**

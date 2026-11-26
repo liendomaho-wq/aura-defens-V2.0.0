@@ -43,6 +43,7 @@ import com.aura.mobiledefense.domain.engines.SolutionExecutionEngine
 import com.aura.mobiledefense.domain.engines.SystemActivityMonitor
 import com.aura.mobiledefense.domain.engines.SystemLoadSnapshot
 import com.aura.mobiledefense.domain.engines.ThreatKnowledgeEngine
+import com.aura.mobiledefense.domain.vpn.AppFirewallEngine
 import com.aura.mobiledefense.domain.vpn.VpnFirewallManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -499,6 +500,71 @@ class NyxViewModel(application: Application) : AndroidViewModel(application) {
                         VpnFirewallManager.buildTelemetryReport(effectiveMode)
                     }
                     "VPN_TELEMETRY" -> VpnFirewallManager.buildTelemetryReport(effectiveMode)
+                    "APP_FIREWALL_BLOCK" -> {
+                        val pkg = plan.target.trim()
+                        val result = AppFirewallEngine.setAppBlocked(getApplication(), pkg, blocked = true)
+                        if (!vpnTelemetry.value.isRunning) {
+                            val started = VpnFirewallManager.startLocalVpnIfPrepared(getApplication())
+                            if (!started) _requestVpnConsentEvent.tryEmit(Unit)
+                        }
+                        ToolExecutionResult(
+                            toolId = "APP_FIREWALL_BLOCK",
+                            target = pkg,
+                            privilegeUsed = effectiveMode,
+                            rawTelemetry = buildString {
+                                appendLine("=== FIREWALL POR APP ===")
+                                appendLine("Paquete: ${result.packageName}")
+                                appendLine("UID: ${result.uid ?: "desconocido"}")
+                                appendLine("Kernel (iptables owner DROP): ${if (result.enforcedAtKernel) "APLICADO Y VERIFICADO" else "NO APLICADO"}")
+                                appendLine(result.message)
+                            },
+                            measuredSpectrum = listOf(0.92f, 0.88f, 0.97f),
+                            suggestedVisual = VisualTopologyKind.ATTACK_VECTOR_FLOW
+                        )
+                    }
+                    "APP_FIREWALL_ALLOW" -> {
+                        val pkg = plan.target.trim()
+                        val result = AppFirewallEngine.setAppBlocked(getApplication(), pkg, blocked = false)
+                        ToolExecutionResult(
+                            toolId = "APP_FIREWALL_ALLOW",
+                            target = pkg,
+                            privilegeUsed = effectiveMode,
+                            rawTelemetry = buildString {
+                                appendLine("=== FIREWALL POR APP ===")
+                                appendLine("Paquete: ${result.packageName}")
+                                appendLine("UID: ${result.uid ?: "desconocido"}")
+                                appendLine("Kernel: ${if (result.enforcedAtKernel) "REGLA RETIRADA Y VERIFICADA" else "SIN CAMBIOS EN KERNEL"}")
+                                appendLine(result.message)
+                            },
+                            measuredSpectrum = listOf(0.5f, 0.6f, 0.5f),
+                            suggestedVisual = VisualTopologyKind.ATTACK_VECTOR_FLOW
+                        )
+                    }
+                    "APP_FIREWALL_LIST" -> {
+                        val query = plan.target.trim().lowercase()
+                        val rules = AppFirewallEngine.listPersistedRules(getApplication())
+                        val apps = AppFirewallEngine.listInstalledApps(getApplication(), includeSystem = false)
+                        val matches = if (query.isBlank()) emptyList()
+                            else apps.filter { it.packageName.contains(query) || it.label.lowercase().contains(query) }
+                        ToolExecutionResult(
+                            toolId = "APP_FIREWALL_LIST",
+                            target = plan.target,
+                            privilegeUsed = effectiveMode,
+                            rawTelemetry = buildString {
+                                appendLine("=== FIREWALL POR APP ===")
+                                appendLine("Apps de terceros instaladas: ${apps.size}")
+                                appendLine("Reglas por app activas en Room: ${rules.size}")
+                                rules.forEach { appendLine("  BLOQUEADA: ${it.pattern} (uid ${it.reason.substringAfter("uid ").substringBefore(")")})") }
+                                if (query.isNotBlank()) {
+                                    appendLine("Coincidencias con '$query':")
+                                    if (matches.isEmpty()) appendLine("  (ninguna)")
+                                    matches.forEach { appendLine("  ${it.label} — ${it.packageName} (uid ${it.uid})") }
+                                }
+                            },
+                            measuredSpectrum = listOf(0.35f, 0.45f, 0.4f),
+                            suggestedVisual = VisualTopologyKind.ATTACK_VECTOR_FLOW
+                        )
+                    }
                     "FIREWALL_BLOCK" -> {
                         val pattern = plan.target.trim()
                         if (pattern.isNotBlank()) {

@@ -179,6 +179,33 @@ object AuraToolCatalog {
             examples = listOf("cuántos paquetes has bloqueado", "muéstrame la telemetría de la vpn")
         ),
         LlmToolSpec(
+            id = "APP_FIREWALL_BLOCK",
+            dispatch = "setAppBlocked",
+            requiresTarget = true,
+            targetKind = TargetKind.PATTERN,
+            prefersRoot = true,
+            summary = "Bloquea TODO el tráfico saliente de una app concreta a nivel de kernel (uid owner DROP, requiere root; sin root la regla queda persistida y se declara no aplicada).",
+            examples = listOf("bloquea la app com.whatsapp", "corta el tráfico de com.facebook.katana")
+        ),
+        LlmToolSpec(
+            id = "APP_FIREWALL_ALLOW",
+            dispatch = "clearAppBlocked",
+            requiresTarget = true,
+            targetKind = TargetKind.PATTERN,
+            prefersRoot = true,
+            summary = "Retira el bloqueo por app y la regla DROP correspondiente del kernel.",
+            examples = listOf("desbloquea com.whatsapp", "quita el bloqueo por app de com.facebook.katana")
+        ),
+        LlmToolSpec(
+            id = "APP_FIREWALL_LIST",
+            dispatch = "appFirewallList",
+            requiresTarget = false,
+            targetKind = TargetKind.FREETEXT,
+            prefersRoot = false,
+            summary = "Muestra las apps de terceros instaladas y las que tienen regla de bloqueo por app activa. Acepta un filtro opcional por nombre o paquete.",
+            examples = listOf("qué apps tengo bloqueadas", "lista las apps de terceros")
+        ),
+        LlmToolSpec(
             id = "FIREWALL_BLOCK",
             dispatch = "addBlockRule",
             requiresTarget = true,

@@ -72,6 +72,27 @@ object RootCommandPolicy {
         }
     }
 
+    /**
+     * Estructura exacta de las reglas firmadas de [com.aura.mobiledefense.domain.vpn.AppFirewallEngine]
+     * (DROP a nivel de kernel por UID). NO se aceptan variantes de orden, cadena, target ni UID:
+     *  - cadena única: OUTPUT (las reglas de apps solo aplican a tráfico saliente),
+     *  - target único: DROP,
+     *  - match único: owner --uid-owner N con N >= 10000 (sistema/root no se toca),
+     *  - la forma combinada exige el MISMO uid en la comprobación y en el alta.
+     * Cualquier otra cosa (FLAG extra, cadena INPUT/FORWARD, -p/-s/-d, ACCEPT/RETURN, otro UID)
+     * no casa y la política sigue aplicándose normalmente.
+     */
+    private val appOwnerRuleRegex =
+        Regex("^iptables -(c|i|d) output -m owner --uid-owner ([0-9]{4,8}) -j drop$")
+    private val appOwnerRuleCombinedRegex =
+        Regex("^iptables -c output -m owner --uid-owner ([0-9]{4,8}) -j drop 2>/dev/null \|\| iptables -i output -m owner --uid-owner \1 -j drop$")
+
+    private fun isSignedAppOwnerRule(normalized: String): Boolean {
+        val uid = appOwnerRuleRegex.matchEntire(normalized)?.groupValues?.get(2)?.toIntOrNull()
+            ?: appOwnerRuleCombinedRegex.matchEntire(normalized)?.groupValues?.get(1)?.toIntOrNull()
+        return uid != null && uid >= 10_000
+    }
+
     /** Hard denials: destructive, persistence, or side-channel execution primitives. */
     private val forbiddenTokens = listOf(
         "rm", "rmdir", "mkfs", "mke2fs", "dd", "shred", "wipe", "reboot", "shutdown", "halt",
@@ -115,15 +136,15 @@ object RootCommandPolicy {
     /** Lo que cada motor le pide al kernel con root. Si no está aquí, no se ejecuta. */
     private val trustedInternalCommands = setOf(
         // NetworkForensicsEngine: sockets, vecinos ARP e iptables en modo lectura
-        "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; " +
-            "ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null",
+        "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---ip-neigh---'; " +
+            "ip neigh show 2>/dev/null; echo '---iptables---'; iptables -L -n 2>/dev/null",
         // BinaryCryptoEngine: inventario de paquetes de terceros
         "pm list packages -3 -f",
         // PrivilegeAndDeviceEngine: sondeo de root y auditoría del kernel
         "id && getenforce 2>/dev/null",
         "id && getenforce && uname -a && ps -A -Z",
-        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); " +
-            "echo '---MOUNTS---'; mount; echo '---PROCS---'; ps -A -Z 2>/dev/null"
+        "uname -a; echo '---lsmod---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); " +
+            "echo '---mounts---'; mount; echo '---procs---'; ps -A -Z 2>/dev/null"
     )
 
     /**
@@ -166,6 +187,9 @@ object RootCommandPolicy {
             return Decision.Allowed(raw, elevated, readOnly = false)
         }
         if (administrativeDropTemplates.contains(normalized)) {
+            return Decision.Allowed(raw, elevated, readOnly = false)
+        }
+        if (isSignedAppOwnerRule(normalized)) {
             return Decision.Allowed(raw, elevated, readOnly = false)
         }
 

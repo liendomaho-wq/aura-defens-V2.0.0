@@ -43,8 +43,11 @@ class FunctionGemmaToolProviderTest {
         val declared = Regex("<start_function_declaration>declaration:([A-Z_]+)\\{")
             .findAll(prompt).map { it.groupValues[1] }.toList()
         assertEquals(AuraToolCatalog.allowedIds.toList(), declared)
-        assertEquals(20, declared.size)
-        assertEquals(20, Regex("<end_function_declaration>").findAll(prompt).count())
+        // 20 herramientas del dataset congelado + APP_FIREWALL_BLOCK/ALLOW/LIST del firewall
+        // por app (el modelo local no las vio en entrenamiento; los proveedores API sí las
+        // reciben como contrato real). Mantener en sincronía con AuraToolCatalog.
+        assertEquals(23, declared.size)
+        assertEquals(23, Regex("<end_function_declaration>").findAll(prompt).count())
     }
 
     @Test

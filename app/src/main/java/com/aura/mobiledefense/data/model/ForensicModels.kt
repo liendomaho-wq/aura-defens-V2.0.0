@@ -207,7 +207,13 @@ data class AuraChatMessage(
 enum class FirewallRuleType {
     DOMAIN,
     IP,
-    PORT
+    PORT,
+    /**
+     * Bloqueo por paquete/UID a nivel de kernel (iptables owner match, solo root).
+     * El patrón es el packageName; el UID se resuelve en cada aplicación de la regla por si la app
+     * se reinstala y cambia de UID. Nunca se aplica al propio Aura ni a UID < 10000 (sistema/root).
+     */
+    APP_UID
 }
 
 enum class FirewallPacketEventAction {
