@@ -160,6 +160,9 @@ jobs:
           echo "::notice title=disk::$(df -h / | tail -1)"
           echo "::notice title=mem::$(free -h | sed -n 2p)"
           echo "::notice title=cpus::$(nproc)"
+          SDKM="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          PKGS=$(timeout 120 "$SDKM" --list 2>&1 | grep -E "system-images;android-(28|29|30|31|34);(default|aosp_atd);x86_64|build-tools;37.0.0|platforms;android-30" | tr '\n' '~' | cut -c1-1800)
+          echo "::notice title=paquetes SDK::${PKGS}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -176,7 +179,7 @@ jobs:
       - name: Run instrumented tests (SQLCipher + migraciones)
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
+          api-level: 31
           target: default
           arch: x86_64
           profile: pixel_5
