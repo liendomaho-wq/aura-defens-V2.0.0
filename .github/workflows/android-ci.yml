@@ -90,15 +90,39 @@ jobs:
 
       # Primero los tests JVM puros (motores VPN, seguridad, LLM): rápidos y sin Robolectric.
       # Después la suite completa. Así el paso deja de ser una caja negra de 40 minutos.
-      - name: Unit tests - JVM puro (vpn, security, llm)
+      # Paso diagnótico: ejecuta en background, si tarda más de 8 min vuelca el estado de
+      # los hilos (jstack) y el tail del log como anotaciones ::error y corta. Así un
+      # cuelgue deja evidencia en vez de morir en silencio por timeout-minutes.
+      - name: Unit tests - JVM puro (diagnostic)
         if: success()
-        timeout-minutes: 15
+        timeout-minutes: 14
         run: |
           set +e
           ./gradlew :app:testDebugUnitTest \
             --tests "com.aura.mobiledefense.domain.*" \
-            --tests "com.aura.mobiledefense.VpnFirewallRealTest" 2>&1 | tee jvm_tests.log
-          status=${PIPESTATUS[0]}
+            --info > jvm_tests.log 2>&1 &
+          GPID=$!
+          elapsed=0
+          while kill -0 "$GPID" 2>/dev/null && [ "$elapsed" -lt 480 ]; do
+            sleep 10; elapsed=$((elapsed+10))
+          done
+          if kill -0 "$GPID" 2>/dev/null; then
+            echo "::error title=HANG detected::tests still running after ${elapsed}s; thread state follows"
+            {
+              echo "== ps =="; ps aux --sort=-%cpu | head -12
+              for pid in $(pgrep -f 'GradleWrapperMain|GradleDaemon|worker.org.gradle|TestExecutor' || true); do
+                echo "== jstack $pid =="
+                jstack "$pid" 2>&1 | grep -A6 -E "^(main|Test worker|Daemon worker|ForkJoinPool|Reference Handler)" | head -80
+              done
+            } > jstack.txt 2>&1
+            jtail=$(tail -c 3500 jvm_tests.log | tr '\n' '~' | tr -d '\r')
+            jcore=$(tail -c 3500 jstack.txt | tr '\n' '~' | tr -d '\r')
+            echo "::error title=HANG log tail::${jtail}"
+            echo "::error title=HANG jstack::${jcore}"
+            kill -TERM "$GPID" 2>/dev/null; sleep 5; kill -KILL "$GPID" 2>/dev/null
+            exit 124
+          fi
+          wait "$GPID"; status=$?
           echo "::notice title=jvm pure exit::$status"
           if [ "$status" -ne 0 ]; then
             errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test >)" -A2 jvm_tests.log | head -80 | tr '\n' '~' | tr -d '\r')
