@@ -69,14 +69,6 @@ android {
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
 
-  // Room exports its schema to `schemas/`; MigrationTestHelper reads those files from the
-  // androidTest APK's assets. Sin este srcDir, runMigrationsAndValidate falla con
-  // "Unable to find schema .../3.json" y los tests de migración no sirven de nada.
-  sourceSets {
-    getByName("androidTest") {
-      assets.srcDir("$projectDir/schemas")
-    }
-  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -156,9 +148,6 @@ dependencies {
   androidTestImplementation(libs.sqlcipher.android)
   // Room 2.6+ ya no necesita esquemas generados para probar migraciones: basta el SQL.
   testImplementation(libs.androidx.room.testing)
-  // MigrationTestHelper vive en room-testing y se usa en androidTest (sourceSets androidTest
-  // también recibe app/schemas como assets).
-  androidTestImplementation(libs.androidx.room.testing)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)

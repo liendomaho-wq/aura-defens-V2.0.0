@@ -762,24 +762,23 @@ Este anexo documenta lo arreglado tras la auditoría. **Verificado en este entor
 - **`gradlew` sin bit de ejecución** (`8fc6f80`, 100644): `chmod +x` + `git update-index --chmod=+x`.
   CI roto → arreglado y verificado el workflow en YAML. Detonante del análisis de historia completa.
 - **Tests instrumentados SQLCipher + migraciones nunca ejecutados**: añadido job
-  `instrumented-tests` con emulador KVM en CI; `androidTest` ya incluye `schemas/` como assets
-  (si no, `runMigrationsAndValidate` falla); migración Room **3→4** real (índice
-  `forensic_sessions.timestamp`). El export `3.json` se conserva byte a byte del original de Room;
-  el `4.json` lo regenerará KSP en cada build (Room versiona los esquemas automáticamente), así que
-  el test de v3 → v4 aplica la migración sobre una base v3 con el mismo stack SQLite de la app en
-  vez de depender de un archivo que el build aún no ha generado.
+  `instrumented-tests` con emulador AVD en CI (diagnóstico por fase: paquetes SDK, AVD, boot).
+  El test de migraciones crea la base v1/v2 con DDL crudo y abre con Room + `AuraMigrations.ALL`
+  (camino de producción), comprobando tablas e índices sobre `sqlite_master`. Se descartó
+  `MigrationTestHelper`: exige JSONs `1.json`/`2.json` que nunca existieron en el repo y un
+  export `4.json` que Room solo genera al compilar (editar esos archivos a mano rompe
+  `kspDebugKotlin`, como comprobó el CI). El `3.json` original se conserva intacto.
 
 ### Medios
 
 - **Correlación CISA KEV por substring** (vendor/producto genéricos ⇒ falsos positivos masivos):
   `matchTelemetryAgainstRules` ahora exige 2+ keywords fuertes (o el CVE explícito) para KEV y
   ordena por puntuación. Tope de lectura del feed (4 MB) con aviso de truncamiento.
-- **@Index vs migraciones/export Room**: las migraciones ya creaban índices pero las entidades no los
-  declaraban y el export no los conocía — `MigrationTestHelper` o Room en runtime podían quejarse.
-  Unificado: las entidades declaran los índices (`timestamp`, `target`, `vendorOrCategory`,
-  `pattern` + el nuevo de sesiones), las migraciones los crean y Room **re-exporta el esquema en
-  cada build** (por eso `3.json` se conserva intacto y no se versiona un `4.json` a mano: un JSON de
-  formato incorrecto rompe `kspDebugKotlin`, como comprueba el CI).
+- **Índices en la base forense**: las migraciones 1→2 y 2→3 crean índices reales
+  (`anomaly_events(target)`, `anomaly_events(timestamp)`, `threat_rules(vendorOrCategory)`,
+  `firewall_rules(pattern)`) sobre bases instaladas; el esquema lo validan los tests con el
+  catálogo `sqlite_master`. Las entidades **no** declaran `@Index` a propósito: declararlos cambiaría
+  el `identityHash` de Room y el `3.json` exportado quedaría inconsistente con el binario.
 - **TLS SNI / Core VPN**: `cleartextWarning`, topologías visuales muertas reparadas
   (`resolveVisualTopology` respeta `suggestedVisual`; el canvas solo usa nodos para
   NEURAL_SYNAPTIC_LATTICE), target estructurado en `AiVisualScene` (antes

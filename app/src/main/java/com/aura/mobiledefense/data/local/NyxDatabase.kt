@@ -14,7 +14,7 @@ import androidx.room.migration.Migration
         ThreatRuleEntity::class,
         FirewallRuleEntity::class
     ],
-    version = 4,
+    version = 3,
     exportSchema = true
 )
 abstract class NyxDatabase : RoomDatabase() {

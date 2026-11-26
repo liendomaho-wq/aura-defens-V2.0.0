@@ -95,12 +95,5 @@ object AuraMigrations {
         }
     }
 
-    /** v3 → v4: índice sobre forensic_sessions.timestamp (ORDER BY del historial). */
-    val MIGRATION_3_4 = object : Migration(3, 4) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_forensic_sessions_timestamp` ON `forensic_sessions` (`timestamp`)")
-        }
-    }
-
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }
