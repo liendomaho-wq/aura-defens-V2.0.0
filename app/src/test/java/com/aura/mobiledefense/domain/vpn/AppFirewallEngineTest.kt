@@ -59,10 +59,19 @@ class AppFirewallEngineTest {
     }
 
     @Test
-    fun `owner uid attribution degrades to null when the platform hides it`() {
+    fun `owner uid attribution never throws, whatever the platform answers`() {
         val local = java.net.InetSocketAddress("10.8.0.2", 40123)
         val remote = java.net.InetSocketAddress("93.184.216.34", 443)
-        // En JVM/Robolectric la API oculta no existe: debe devolver null, nunca lanzar.
-        assertNull(AppFirewallEngine.attributeOwnerUidBestEffort(context, 6, local, remote))
+        // En JVM la API oculta no existe o devuelve algo arbitrario: el contrato es
+        // "nunca lanzar; null o un uid válido", sin importar el entorno.
+        val uid = AppFirewallEngine.attributeOwnerUidBestEffort(context, 6, local, remote)
+        assertTrue(uid == null || uid >= 0)
+    }
+
+    @Test
+    fun `minus one from the hidden api maps to null, real uids pass through`() {
+        assertNull(AppFirewallEngine.normalizeOwnerUid(-1))
+        assertEquals(10_042, AppFirewallEngine.normalizeOwnerUid(10_042))
+        assertEquals(0, AppFirewallEngine.normalizeOwnerUid(0))
     }
 }

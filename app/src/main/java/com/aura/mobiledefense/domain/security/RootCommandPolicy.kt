@@ -162,6 +162,21 @@ object RootCommandPolicy {
 
     private val pipelineSeparators = Regex("(\\|\\||&&|;|\\|)")
 
+    /** Misma normalización que aplica [evaluate]: minúsculas + colapso de espacios. */
+    private fun normalize(raw: String): String =
+        raw.trim().lowercase().split(Regex("\\s+")).joinToString(" ")
+
+    /**
+     * Los conjuntos de plantillas se normalizan en carga: un literal con mayúsculas (flags tipo
+     * `-A`, `-Z`, `-L`…) JAMÁS casaría con la entrada normalizada y sería un comando denegado
+     * en silencio — bug real encontrado por los tests nuevos (los trustedInternalCommands
+     * llevaban '---IP-NEIGH---' y 'ps -A -Z' y nunca se reconocían). Normalizándolos aquí, el
+     * contrato queda uniforme para cualquier plantilla futura.
+     */
+    private val normalizedTrustedInternalCommands = trustedInternalCommands.map { normalize(it) }.toSet()
+    private val normalizedMitigationTemplates = mitigationTemplates.map { normalize(it) }.toSet()
+    private val normalizedAdministrativeDropTemplates = administrativeDropTemplates.map { normalize(it) }.toSet()
+
     fun evaluate(rawCommand: String, elevated: Boolean): Decision {
         val raw = rawCommand.trim().removePrefix("/su").trim()
         if (raw.isBlank()) {
@@ -174,19 +189,19 @@ object RootCommandPolicy {
             return Decision.Denied("El comando contiene saltos de línea o bytes nulos.")
         }
 
-        val normalized = raw.lowercase().split(Regex("\\s+")).joinToString(" ")
+        val normalized = normalize(raw)
 
         // Comandos internos firmados por Aura: se comparan normalizados y literalmente, así que
         // un usuario no puede reutilizarlos con texto propio.
-        if (trustedInternalCommands.contains(normalized)) {
+        if (normalizedTrustedInternalCommands.contains(normalized)) {
             return Decision.Allowed(raw, elevated, readOnly = true)
         }
 
         // Whitelisted Aura mitigations (literal match) run even when elevate=true.
-        if (mitigationTemplates.contains(normalized)) {
+        if (normalizedMitigationTemplates.contains(normalized)) {
             return Decision.Allowed(raw, elevated, readOnly = false)
         }
-        if (administrativeDropTemplates.contains(normalized)) {
+        if (normalizedAdministrativeDropTemplates.contains(normalized)) {
             return Decision.Allowed(raw, elevated, readOnly = false)
         }
         if (isSignedAppOwnerRule(normalized)) {

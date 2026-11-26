@@ -98,7 +98,8 @@ class SolutionExecutionEngine(
             }
         }
         if (appliedRules.isEmpty()) {
-            appliedRules.add("Reglas base de rastreadores y puertos 5555/23/6379 activas")
+            // Sin hallazgos accionables: decirlo, no inventar que se aplicaron reglas.
+            appliedRules.add("Sin hallazgos accionables en este barrido; no se añadió ninguna regla nueva")
         }
         emitStep(2, "Firewall actualizado en Room", "Reglas activadas: ${appliedRules.joinToString(" · ")}", ExecutionStepState.DONE)
         emit(steps.toList())
@@ -110,15 +111,24 @@ class SolutionExecutionEngine(
             val cmdResults = mutableListOf<String>()
             if (lower.contains("permissive")) {
                 val r = privilegeEngine.executeRootShellInspection("setenforce 1 && getenforce", PrivilegeMode.ROOT)
-                cmdResults.add("SELinux -> ${r.rawTelemetry.lines().lastOrNull { it.isNotBlank() } ?: "ejecutado"}")
+                val tail = r.rawTelemetry.lines().lastOrNull { it.isNotBlank() && !it.startsWith("===") && !it.startsWith("Comando:") && !it.startsWith("Exit Code:") }?.trim() ?: "sin salida"
+                val verified = r.rawTelemetry.contains("Exit Code: 0") && r.rawTelemetry.contains("Enforcing", ignoreCase = true)
+                cmdResults.add(if (verified) "SELinux -> ENFORCING (VERIFICADO en el dispositivo)" else "SELinux -> NO verificado (salida: $tail)")
             }
             if (lower.contains("5555/tcp")) {
                 privilegeEngine.executeRootShellInspection("iptables -C INPUT -p tcp --dport 5555 -j DROP 2>/dev/null || iptables -I INPUT -p tcp --dport 5555 -j DROP", PrivilegeMode.ROOT)
-                cmdResults.add("iptables DROP 5555 aplicado")
+                // Verificación real contra el kernel en vivo, no la fe en que el -I funcionó:
+                val check = privilegeEngine.executeRootShellInspection("iptables -L INPUT -n", PrivilegeMode.ROOT)
+                val present = check.rawTelemetry.lineSequence().any { line ->
+                    line.contains("DROP", ignoreCase = true) && (line.contains("dpt:5555") || line.contains("dport 5555", ignoreCase = true))
+                }
+                cmdResults.add(if (present) "iptables DROP 5555 VERIFICADO en cadena INPUT" else "iptables DROP 5555 NO verificado (sin 'DROP … dpt:5555' en iptables -L INPUT -n)")
             }
             if (cmdResults.isEmpty()) {
                 val r = privilegeEngine.executeRootShellInspection("getenforce", PrivilegeMode.ROOT)
-                cmdResults.add("Kernel verificado (${r.rawTelemetry.lines().lastOrNull { it.isNotBlank() } ?: "ok"})")
+                val modeNow = Regex("(Enforcing|Permissive|Disabled)", RegexOption.IGNORE_CASE)
+                    .find(r.rawTelemetry)?.value ?: "desconocido"
+                cmdResults.add("SELinux actual: $modeNow (verificado en el dispositivo)")
             }
             emitStep(3, "Contención Kernel ejecutada", cmdResults.joinToString(" | "), ExecutionStepState.DONE)
             emit(steps.toList())

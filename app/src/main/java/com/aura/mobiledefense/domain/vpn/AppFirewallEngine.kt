@@ -217,7 +217,10 @@ object AppFirewallEngine {
                 java.net.InetSocketAddress::class.java
             )
             val uid = method.invoke(cm, protocol, localAddress, remoteAddress) as? Int ?: return null
-            if (uid < 0) null else uid
+            normalizeOwnerUid(uid)
         }.getOrNull()
+
+    /** La API oculta devuelve -1 cuando no puede atribuir el socket: eso no es un uid válido. */
+    internal fun normalizeOwnerUid(rawUid: Int): Int? = if (rawUid >= 0) rawUid else null
     }
 }
