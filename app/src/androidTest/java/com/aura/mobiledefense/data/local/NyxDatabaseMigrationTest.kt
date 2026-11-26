@@ -78,10 +78,14 @@ class NyxDatabaseMigrationTest {
     """.trimIndent()
 
     @Before
-    fun setUp() = context.deleteDatabase(dbName)
+    fun setUp() {
+        context.deleteDatabase(dbName)
+    }
 
     @After
-    fun tearDown() = context.deleteDatabase(dbName)
+    fun tearDown() {
+        context.deleteDatabase(dbName)
+    }
 
     private fun createRawDatabase(version: Int, extraDdl: List<String> = emptyList()): File {
         val file = context.getDatabasePath(dbName)
