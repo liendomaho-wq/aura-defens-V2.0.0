@@ -777,8 +777,10 @@ Este anexo documenta lo arreglado tras la auditoría. **Verificado en este entor
 - **Índices en la base forense**: las migraciones 1→2 y 2→3 crean índices reales
   (`anomaly_events(target)`, `anomaly_events(timestamp)`, `threat_rules(vendorOrCategory)`,
   `firewall_rules(pattern)`) sobre bases instaladas; el esquema lo validan los tests con el
-  catálogo `sqlite_master`. Las entidades **no** declaran `@Index` a propósito: declararlos cambiaría
-  el `identityHash` de Room y el `3.json` exportado quedaría inconsistente con el binario.
+  catálogo `sqlite_master`. Las entidades **sí** declaran exactamente los mismos índices que
+  crean las migraciones: Room valida el esquema migrado contra las entidades durante la
+  migración, así que entidad e índice deben coincidir uno a uno (lo descubrió el emulador).
+  `forensic_sessions` no tiene índices, igual que en las migraciones.
 - **TLS SNI / Core VPN**: `cleartextWarning`, topologías visuales muertas reparadas
   (`resolveVisualTopology` respeta `suggestedVisual`; el canvas solo usa nodos para
   NEURAL_SYNAPTIC_LATTICE), target estructurado en `AiVisualScene` (antes
@@ -794,3 +796,53 @@ Este anexo documenta lo arreglado tras la auditoría. **Verificado en este entor
 - `./gradlew :app:assembleDebug`, `:app:testDebugUnitTest` — no hay Android SDK aquí. El módulo VPN
   (el área con más riesgo) sí está verificado end-to-end en JVM con los archivos reales del repo.
 - `:app:connectedDebugAndroidTest` — corre en el nuevo job `instrumented-tests` del CI (emulador).
+
+
+---
+
+## Anexo final (2026-11-26): CI unitario verde y diez fallos reales más
+
+El CI instrumentado ya estaba en verde; `:app:testDebugUnitTest` llevaba meses sin terminar
+(>40 min en el paso de tests) y quedó resuelto y verificado (run `45767798122`, ambos jobs
+**success**; unit tests 30 s de ejecución real). Hallazgos y correcciones, cada uno siendo un
+fallo de verdad y no cosmético:
+
+- **`ShellRunner.exec` nunca aplicaba el timeout**: `withTimeoutOrNull` sobre un bloque
+  bloqueante no puede interrumpir `process.waitFor()`; un `cat` sin argumentos (stdin PIPE)
+  bloqueaba el Test Executor **para siempre** y con él todo el job de CI. Ahora el timeout vive
+  en `waitFor(timeoutMs, TimeUnit.MILLISECONDS)` + `destroyForcibly()`. Es también un bug de
+  producción: el contrato "matar procesos colgados" era falso.
+- **`RootCommandPolicy` negaba `echo aura-ok`**: `-ok` estaba en `forbiddenSubstrings` (para
+  `find -ok`) como substring, así que cualquier texto con `-ok` (p. ej. `aura-ok`) era denegado.
+  Las acciones `-exec/-execdir/--exec/-ok/-okdir/-delete` ahora se validan a nivel de token.
+- **`/proc/sys/kernel` protegido por error**: la política prohibía `cat` sobre
+  `randomize_va_space`, que la propia telemetría anti-debug necesita leer. Escrituras siguen
+  imposibles (binarios de solo lectura, sin redirecciones, sin `sysctl`/`setprop`).
+- **`TelemetryRedactor` no redactaba `Authorization: Bearer <t>`**: el regex exigía
+  `bearer|token…` seguido directo de `:`; con la forma real `Authorization: Bearer X` el secreto
+  sobrevivía (fuga de credenciales a la telemetría/LLM). Nuevo prefijo `(bearer |authorization…)`
+  con el secreto en grupo separado; `serial` ya no deriva el "head" del valor capturado.
+- **`PacketCodec.parseIpv4Packet` clampeaba `totalLength` al buffer en vez de rechazarlo**:
+  un paquete que declara más bytes de los leídos se parseaba igualmente. Ahora exige
+  `totalLen ≥ ihlBytes && totalLen ≤ length`.
+- **`parseIpv4AddressBytes` usaba `InetAddress.getByName`**: aceptaba `"1.2.3"` (→ 1.2.0.3) y
+  hacía una consulta DNS para entradas no numéricas. Dotted-quad estricto, sin red.
+- **`VpnFirewallManager` caía con `IllegalStateException` sin KeyStore**: usaba
+  `NyxDatabase.getInstance` (que lanza a propósito para que la UI marque `storageDegraded`).
+  El VPN no puede permitirse eso; ahora usa `NyxDatabase.getOrInMemory` (fallback documentado),
+  y la UI conserva su propio aviso.
+- **LLM tests sin runtime Android**: `LlmGuardrailsTest`/`FunctionGemmaToolProviderTest` usan
+  `org.json` y `android.util.Log`, imposibles en JVM puro. Bajo Robolectric (`sdk = [34]`).
+  `isReturnDefaultValues` se descartó: hace que `JSONObject.optString` devuelva null → NPEs.
+- **Invariante de prompt mal planteada**: `intent` menciona herramientas repetidas en los
+  ejemplos (HTTP_HEADERS, FIREWALL_BLOCK). El invariante que importa es
+  `promptBlock()` exacto-una-vez (lo verifica el test) e `intent` cubre todo el catálogo.
+- **Tests con buffers mal construidos**: `ipv4TcpPacket` solo escribía 2 de los 4 bytes de `seq`;
+  la respuesta DNS de prueba escribía 6 bytes para NS+AR en vez de 4 (desplazando el QNAME).
+
+### Estado del CI (ambos jobs en verde)
+
+- `build-and-test`: assembleDebug ✓, `Unit tests (JVM + Robolectric)` ✓ (~30 s), variantes
+  diagnóstico con `jstack` + cola del log como anotaciones `::error` si algo vuelve a colgarse.
+- `instrumented-tests`: emulador AVD `aura_avd`, SQLCipher real + migraciones 1→2 y 2→3 ✓.
+- Run de referencia verde: `45767798122` (commit `b923741`).
