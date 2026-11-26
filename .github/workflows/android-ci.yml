@@ -146,6 +146,27 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           sudo chmod 666 /dev/kvm || true
 
+      # Preinstala los paquetes del SDK que el runner de emulador instala por su cuenta,
+      # con error visible en anotaciones si alguno falla (antes el paso moría con un
+      # genérico "process exited with code 1" sin decir qué paquete faltaba).
+      - name: Install SDK packages (diagnosed)
+        run: |
+          SDKM="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+          if ! "$SDKM" --install 'build-tools;37.0.0' platform-tools 'platforms;android-31' > sdkbase.log 2>&1; then
+            echo "::error title=SDK base::$(tail -c 1400 sdkbase.log | tr '\n' '~' | tr -d '\r')"
+            exit 1
+          fi
+          if ! "$SDKM" --install emulator --channel=0 > sdkemu.log 2>&1; then
+            echo "::error title=SDK emulator::$(tail -c 1400 sdkemu.log | tr '\n' '~' | tr -d '\r')"
+            exit 1
+          fi
+          if ! "$SDKM" --install 'system-images;android-31;default;x86_64' --channel=0 > sdkimg.log 2>&1; then
+            echo "::error title=SDK system image::$(tail -c 1400 sdkimg.log | tr '\n' '~' | tr -d '\r')"
+            exit 1
+          fi
+          echo "SDK packages OK"
+
       # Diagnóstico del runner: se publica como anotaciones ::notice para poder leerlo
       # aunque el emulador no llegue a arrancar (el log del job no es accesible desde fuera).
       - name: Emulator environment probe
