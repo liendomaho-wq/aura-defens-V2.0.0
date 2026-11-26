@@ -1,17 +1,21 @@
 package com.aura.mobiledefense.domain.ai.llm
-
 import com.aura.mobiledefense.data.model.PrivilegeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The LLM must never widen Aura's attack surface. These tests pin the contract: an id outside the
  * catalogue, an injected prompt, a shell-looking target or an unreachable model all degrade to the
  * heuristic instead of reaching an engine.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class LlmGuardrailsTest {
 
     private class FakeProvider(
@@ -194,10 +198,18 @@ class LlmGuardrailsTest {
     // ── System prompt ──────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `system prompt lists every tool exactly once`() {
+    fun `tool catalogue block lists every tool exactly once`() {
+        val block = AuraToolCatalog.promptBlock()
+        AuraToolCatalog.allowedIds.forEach { id ->
+            assertEquals("tool $id must appear exactly once in promptBlock", 1, Regex("\\b$id\\b").findAll(block).count())
+        }
+    }
+
+    @Test
+    fun `system prompt mentions every tool at least once`() {
         val prompt = AuraSystemPrompt.intent
         AuraToolCatalog.allowedIds.forEach { id ->
-            assertEquals("tool $id missing from prompt", 1, Regex("\\b$id\\b").findAll(prompt).count())
+            assertTrue("tool $id missing from prompt", prompt.contains(id))
         }
     }
 

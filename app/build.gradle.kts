@@ -67,15 +67,7 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions {
-    unitTests {
-      isIncludeAndroidResources = true
-      // Los tests JVM puros (dominio) pueden invocar android.util.Log: sin Robolectric esos
-      // metodos lanzan "not mocked". isReturnDefaultValues hace que devuelvan valores por defecto
-      // en lugar de lanzar, que es lo que el codigo de produccion espera en JVM.
-      isReturnDefaultValues = true
-    }
-  }
+  testOptions { unitTests { isIncludeAndroidResources = true } }
 
   dependenciesInfo {
     includeInApk = false

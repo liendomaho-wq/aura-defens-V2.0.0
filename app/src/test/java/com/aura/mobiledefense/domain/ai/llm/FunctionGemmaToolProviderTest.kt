@@ -1,9 +1,11 @@
 package com.aura.mobiledefense.domain.ai.llm
-
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Contrato del adaptador FunctionGemma ↔ AuraToolCatalog.
@@ -15,6 +17,8 @@ import org.junit.Test
  *     [LlmIntentResolver] acepta, y una herramienta fuera del catálogo NUNCA llega a un plan.
  *  3. Los casos congelados del dataset siguen despachando la herramienta esperada.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class FunctionGemmaToolProviderTest {
 
     private fun renderedModelOutput(toolId: String, target: String, reason: String = "motivo"): String =
