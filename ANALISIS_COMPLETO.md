@@ -846,3 +846,92 @@ fallo de verdad y no cosmético:
   diagnóstico con `jstack` + cola del log como anotaciones `::error` si algo vuelve a colgarse.
 - `instrumented-tests`: emulador AVD `aura_avd`, SQLCipher real + migraciones 1→2 y 2→3 ✓.
 - Run de referencia verde: `45767798122` (commit `b923741`).
+
+---
+
+## Anexo: ronda P0–P2 (26 nov 2026) — qué cambió y por qué
+
+Ejecutado tras aprobar el plan en 8 puntos. Cada pieza se verificó en CI; nada queda como
+"implementado pero no probado". Commits en `main`: `4180978` → `ae65602` → `0ae05d5` → `378b2d8`
+→ `e5b1de6` → `55071ca`. Run verde de referencia: `45821463235` (los tres jobs).
+
+### P0 — privilegios y transporte
+
+- **`RootCommandPolicy`: set cerrado de mitigaciones.** El DROP de puertos administrativos ya no se
+  acepta por prefijo (`iptables -i input -p tcp --dport ` + puerto ∈ {23,5555,6379,27017}): es un
+  conjunto literal de 8 plantillas (4 puertos × forma `-I` y `-C || -I`). Variantes con orden de
+  flags alterado, cadena distinta, target distinto o inyección ya no pasan; hay tests que fijan el
+  contrato (incl. "misma decisión elevada/no elevada").
+- **Bug real encontrado por los tests nuevos**: los `trustedInternalCommands` llevaban mayúsculas
+  (`---IP-NEIGH---`, `ps -A -Z`, `iptables -L`) y la política compara contra la entrada
+  normalizada (minúsculas + colapso). Esos comandos **nunca** fueron reconocidos y, como llevan
+  `2>/dev/null`, caían a la regla de redirección `>` y se **denegaban en silencio**
+  (`NetworkForensicsEngine` recibía DENY en producción). Fix definitivo: los conjuntos de
+  plantillas se **normalizan al cargar**, así que ningún literal con mayúsculas puede romper el
+  reconocimiento otra vez.
+- **Auditoría sin topes artificiales**: `BinaryCryptoEngine` evaluaba solo 25 paquetes y el
+  inventario de terceros iba truncado con `head -n 25`; los `ps`/`lsmod`/`mount`/`iptables -L` de
+  inspección se truncaban con `head -n`. Eliminados todos; el techo real y documentado es
+  `MAX_OUTPUT = 12000` del `ShellRunner`.
+- **Proxy UDP real** (`UdpProxyEngine`): QUIC/WebRTC/VoIP volvían muertos con la VPN puesta (todo UDP
+  no-DNS se descartaba en silencio con telemetría). Ahora: sockets UDP reales protegidos
+  (`VpnService.protect`), tabla acotada a 256 flujos con expulsión del más antiguo, expiración por
+  inactividad (30 s), respuestas reescritas con checksums válidos y telemetría explícita de lo
+  bloqueado y de los fallos. DNS sigue su propio camino; ICMP/otros protocolos se descartan pero
+  ahora con registro explícito. Tests: bloqueo sin socket, reenvío con payload exacto, reescritura
+  de respuesta válida (checksums verificados por el parser), tabla acotada, `closeAll`.
+- **IPv6 en blackhole auditado**: `addRoute("::", 0)` al TUN para que el tráfico v6 no salga sin
+  inspección. Decisión documentada: en redes IPv6-only puras no habrá conectividad mientras Aura
+  esté activo; un proxy IPv6 completo se descarta esta ronda (semanas de trabajo, no un patch).
+- **Release verificable en CI**: job `release-build` (`assembleRelease` con keystore desechable en
+  cada push a main) + keep de `net.zetetic.**` para SQLCipher y `-dontwarn` de las anotaciones
+  `errorprone` de Tink. La release nunca se había compilado: R8 fallaba de verdad antes del keep.
+
+### P1 — firewall por app e intel
+
+- **Firewall por app (requiere root)**: `AppFirewallEngine` lista apps reales, persiste reglas
+  `APP_UID` en la tabla `firewall_rules` existente (**sin** tocar el esquema Room v3), aplica
+  `OUTPUT -m owner --uid-owner N -j DROP` con comandos firmados validados por la política (cadena
+  única OUTPUT, target único DROP, `uid ≥ 10000`, forma combinada con UID idéntico en ambas
+  mitades) y **verifica en kernel** con `iptables -L OUTPUT -n`. Nunca auto-bloqueo ni UIDs de
+  sistema. Las reglas se reaplican al arrancar el túnel (no sobreviven a reinicios).
+  **Sin root** (Android 10+ no permite cortar el tráfico de otra app): la regla queda persistida y
+  se declara **no aplicada** con el motivo real; la API oculta `getConnectionOwnerUid` solo se usa
+  como atribución forense best-effort vía reflexión, documentada.
+- **Intel bajo demanda, siempre opt-in**: `INTEL_OSV_QUERY` (api.osv.dev: vulnerabilidades por
+  paquete y versión exacta; Maven con coordenadas completas) e `INTEL_URLHAUS_CHECK`
+  (urlhaus.abuse.ch: reputación de host/URL). Nada se sincroniza en segundo plano; las respuestas
+  se leen con tope duro de bytes; los parsers son funciones puras con tests (incl. totales reales
+  con listas truncadas); ante red/HTTP/formato se devuelve un error honesto, nunca un "parece
+  vulnerable" inventado. KEV sigue igual (`SELF_TRAIN_KEV`).
+- **Catálogo**: 25 herramientas (APP_FIREWALL_BLOCK/ALLOW/LIST, INTEL_OSV_QUERY,
+  INTEL_URLHAUS_CHECK) con guardrails y contrato FunctionGemma en sincronía; el clasificador
+  heurístico y la barra rápida ya despachan las nuevas; el modelo FunctionGemma local no las vio en
+  entrenamiento (documentado).
+
+### P2 — respuesta verificable
+
+- `EXECUTE_SOLUTIONS` ya no reporta mitigaciones a fe: SELinux se verifica leyendo el `getenforce`
+  real y el DROP de 5555 se verifica exigiendo `DROP … dpt:5555` en un `iptables -L INPUT -n` en
+  vivo; el informe dice **VERIFICADO** o **NO verificado** con la salida cruda. El mensaje
+  "Reglas base … activas" cuando no se aplicó nada pasó a decir la verdad.
+- Firewall por app ya verificaba en kernel (P1); aquí se extiende el patrón al resto.
+
+### Lo que se rechazó a propósito (esta ronda)
+
+- **Modelo LLM on-device**: cero dependencias hoy (MediaPipe/LiteRT/llama.cpp ausentes); meter
+  ~1 GB de pesos sin poder iterar en dispositivo violaría "sin simulaciones". El adaptador
+  `FunctionGemmaToolProvider` sigue listo para cuando llegue.
+- **Proxy IPv6 completo**: semanas de trabajo; se eligió el blackhole auditado.
+- **Sincronización periódica de intel**: requeriría WorkManager y una cadencia; se dejó
+  100% bajo demanda para no añadir red silenciosa.
+- **Scraper/lista completa de URLhaus o dumps de OSV**: no caben en el dispositivo.
+
+### Límites que siguen vigentes (honestos)
+
+- Firewall por app **sin root no bloquea**: Android 10+ oculta el UID dueño del socket. Con root
+  sí (kernel).
+- QUIC/UDP no se filtra por dominio (solo IP/puerto): el SNI va cifrado en QUIC.
+- IPv6-only: sin conectividad con Aura activo.
+- Sin telemetría/MDM de empresa: cada dispositivo es autónomo; no hay consola ni borrado remoto.
+- Release: compila y R8 pasa, pero no hay APK firmado público (`versionCode 1`).
