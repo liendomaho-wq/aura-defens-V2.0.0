@@ -131,6 +131,57 @@ class AuraLocalVpnService : VpnService() {
         startTunnel()
     }
 
+    /**
+     * Crea un socket UDP conectado hacia [destinationIp]:[destinationPort] y lo **protege** para
+     * que no vuelva a entrar al TUN. null cuando el sistema no permite crearlo o protegerlo.
+     */
+    private fun createProtectedUdpFlow(
+        destinationIp: String,
+        destinationPort: Int,
+        devicePort: Int
+    ): UdpProxyEngine.UdpFlow? {
+        val addr = runCatching { java.net.InetAddress.getByName(destinationIp) }.getOrNull() ?: return null
+        val socket = java.net.DatagramSocket()
+        return runCatching {
+            if (!protect(socket)) {
+                socket.close()
+                return null
+            }
+            socket.connect(addr, destinationPort)
+            object : UdpProxyEngine.UdpFlow {
+                override val destinationIp: String = destinationIp
+                override val destinationPort: Int = destinationPort
+                override val devicePort: Int = devicePort
+
+                override fun send(payload: ByteArray) {
+                    socket.soTimeout = 500
+                    socket.send(java.net.DatagramPacket(payload, payload.size))
+                }
+
+                override fun receive(timeoutMs: Int): ByteArray? {
+                    socket.soTimeout = timeoutMs
+                    val buffer = ByteArray(2048)
+                    val packet = java.net.DatagramPacket(buffer, buffer.size)
+                    return try {
+                        socket.receive(packet)
+                        packet.data.copyOfRange(0, packet.length)
+                    } catch (_: java.net.SocketTimeoutException) {
+                        null
+                    } catch (_: java.io.IOException) {
+                        null
+                    }
+                }
+
+                override fun close() {
+                    runCatching { socket.close() }
+                }
+            }
+        }.getOrElse {
+            runCatching { socket.close() }
+            null
+        }
+    }
+
     private fun startTunnel() {
         if (tunnelJob?.isActive == true) return
         tunnelJob = serviceScope.launch {
@@ -156,9 +207,13 @@ class AuraLocalVpnService : VpnService() {
 
                 // Ruta completa: todo el tráfico IPv4 entra al proxy transparente, que aplica las
                 // reglas del firewall paquete a paquete y reenvía lo permitido por un socket real.
-                // IPv6 queda fuera del túnel a propósito: el proxy solo habla IPv4 y enrutar :: sin
-                // manejarlo cortaría toda la conectividad v6 del dispositivo.
                 runCatching { builder.addRoute("0.0.0.0", 0) }
+                // IPv6 en BLACKHOLE: el TUN no habla IPv6 y, sin ruta explícita, las apps caerían a
+                // la interfaz IPv6 física con el tráfico sin inspección — rompería la protección
+                // integral. Con addRoute("::", 0) el tráfico IPv6 muere dentro del túnel y las apps
+                // usan IPv4 real a través del proxy. Coste aceptado: en redes IPv6-only puras el
+                // dispositivo no tendrá conectividad mientras Aura esté activo (documentado).
+                runCatching { builder.addRoute("::", 0) }
                 // Los sockets reales del proxy se abren con `VpnService.protect()`, así que salen por
                 // la red física y no vuelven a entrar al TUN. El TUN se marca como no-medido para que
                 // el ahorro de batería no lo trate como red de pago.
@@ -234,20 +289,38 @@ class AuraLocalVpnService : VpnService() {
                             bytesInDelta = readLen.toLong(),
                             bytesOutDelta = 0L
                         )
+                    } else if (parsed.protocol == PacketCodec.PROTO_UDP) {
+                        // 3. UDP no-DNS: proxy real con socket protegido. QUIC/WebRTC/VoIP vuelven a
+                        //    tener conectividad bajo el firewall; lo no permitido se bloquea con
+                        //    telemetría (nunca en silencio).
+                        val handled = UdpProxyEngine.handleFromDevice(
+                            parsed = parsed,
+                            packet = packetCopy,
+                            flowFactory = ::createProtectedUdpFlow,
+                            onBlocked = { reason ->
+                                VpnFirewallManager.recordPacketEvent(
+                                    protocol = "UDP",
+                                    destination = "${parsed.dstIpString}:${parsed.dstPort}",
+                                    port = parsed.dstPort,
+                                    action = FirewallPacketEventAction.BLOCKED,
+                                    reason = reason,
+                                    bytesInDelta = readLen.toLong(),
+                                    bytesOutDelta = 0L
+                                )
+                            },
+                            downlink = { reply -> writePacketToTun(output, reply) }
+                        )
+                        if (handled) continue
                     } else {
-                        // 3. UDP e ICMP: firewall por IP/puerto (DNS ya se atendió arriba).
-                        val decision = VpnFirewallManager.evaluatePacketRoute(parsed.dstIpString, parsed.dstPort)
-                        val protoName = when (parsed.protocol) {
-                            PacketCodec.PROTO_TCP -> "TCP"
-                            PacketCodec.PROTO_UDP -> "UDP"
-                            else -> "IP(${parsed.protocol})"
-                        }
+                        // 4. ICMP y otros protocolos: el túnel no los reenvía. Se descartan de
+                        //    forma explícita y auditada (el stack nativo del sistema respondería
+                        //    con eco/errores que saltarían la inspección).
                         VpnFirewallManager.recordPacketEvent(
-                            protocol = protoName,
+                            protocol = "IP(${parsed.protocol})",
                             destination = parsed.dstIpString,
                             port = parsed.dstPort,
                             action = FirewallPacketEventAction.BLOCKED,
-                            reason = if (!decision.allowed) decision.reason else "Ruta bloqueada por Firewall TUN",
+                            reason = "Protocolo no reenviado por el túnel Aura",
                             bytesInDelta = readLen.toLong(),
                             bytesOutDelta = 0L
                         )
@@ -416,6 +489,7 @@ class AuraLocalVpnService : VpnService() {
     }
 
     private fun stopTunnel() {
+        UdpProxyEngine.closeAll()
         tunnelJob?.cancel()
         tunnelJob = null
         activeUpstreamDns = emptyList()

@@ -44,7 +44,7 @@ class BinaryCryptoEngine(private val context: Context) {
             .filter {
                 filterQuery.isBlank() || it.contains(filterQuery, ignoreCase = true)
             }
-            .take(25)
+
 
         val sb = StringBuilder()
         sb.appendLine("=== AUDITORÍA DE SUPERFICIE DE APLICACIONES ===")
@@ -111,7 +111,7 @@ class BinaryCryptoEngine(private val context: Context) {
             // Todo shell pasa por ShellRunner, que evalúa RootCommandPolicy antes de crear el
             // proceso. Antes esta llamada iba directo a `su -c`, saltándose la política.
             val suPkgs = ShellRunner.run(
-                command = "pm list packages -3 -f | head -n 25",
+                command = "pm list packages -3 -f",
                 elevated = true,
                 timeoutMs = 5000L
             ).combined.ifBlank { "(sin salida de pm list packages)" }

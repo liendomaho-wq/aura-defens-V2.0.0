@@ -17,7 +17,7 @@ class RootCommandPolicyTest {
 
     @Test
     fun `read only inspections are allowed`() {
-        assertTrue(allowed("id && getenforce && uname -a && ps -A -Z | head -n 25"))
+        assertTrue(allowed("id && getenforce && uname -a && ps -A -Z"))
         assertTrue(allowed("getprop ro.boot.verifiedbootstate"))
         assertTrue(allowed("ss -tulnpa"))
         assertTrue(allowed("iptables -L -n"))
@@ -34,6 +34,36 @@ class RootCommandPolicyTest {
         assertTrue(!allowed("setenforce 0 && getenforce"))
         assertTrue(allowed("setenforce 1"))
         assertTrue(allowed("setenforce 1 && getenforce"))
+    }
+
+    @Test
+    fun `administrative drop templates are closed sets, not prefix matches`() {
+        // Los 4 puertos administrativos: forma -I directa y forma -C || -I.
+        val ports = listOf(23, 5555, 6379, 27017)
+        ports.forEach { port ->
+            assertTrue(allowed("iptables -I INPUT -p tcp --dport $port -j DROP"))
+            assertTrue(allowed("iptables -C INPUT -p tcp --dport $port -j DROP 2>/dev/null || iptables -I INPUT -p tcp --dport $port -j DROP"))
+            assertTrue(allowed("iptables -i input -p tcp --dport $port -j drop"))
+        }
+        // Variantes que un prefijo-matching habría colado: orden alterado, flag extra, cadena rara.
+        assertTrue(denied("iptables -I INPUT -p tcp -j DROP --dport 5555"))
+        assertTrue(denied("iptables -A INPUT -p tcp --dport 5555 -j DROP"))
+        assertTrue(denied("iptables -I INPUT -p tcp --dport 5555 -j ACCEPT"))
+        assertTrue(denied("iptables -I FORWARD -p tcp --dport 5555 -j DROP"))
+        assertTrue(denied("iptables -I INPUT --dport 5555 -p tcp -j DROP"))
+        // Puertos administrativos con sufijo/inyección no cuelan.
+        assertTrue(denied("iptables -I INPUT -p tcp --dport 55550 -j DROP"))
+        assertTrue(denied("iptables -I INPUT -p tcp --dport 5555 -j DROP; reboot"))
+        // La elevación no cambia la decisión sobre plantillas.
+        assertTrue(allowed("iptables -I INPUT -p tcp --dport 23 -j DROP", elevated = false))
+    }
+
+    @Test
+    fun `internal inspection templates have no artificial line caps`() {
+        // Las auditorías no se truncan por capricho: el techo real es ShellRunner (12 000 chars).
+        assertTrue(allowed("id && getenforce && uname -a && ps -A -Z"))
+        assertTrue(allowed("ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null"))
+        assertTrue(allowed("uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); echo '---MOUNTS---'; mount; echo '---PROCS---'; ps -A -Z 2>/dev/null"))
     }
 
     @Test

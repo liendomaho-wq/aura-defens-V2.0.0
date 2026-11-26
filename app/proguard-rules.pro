@@ -22,3 +22,9 @@
 -keep class com.google.firebase.appcheck.** { *; }
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# SQLCipher: la biblioteca nativa y sus clases de enlace JNI se cargan por reflexión/JNI;
+# R8 no puede ver esos usos y rompería la apertura de la base de datos en release.
+-keep class net.zetetic.database.sqlcipher.** { *; }
+-keep class net.zetetic.database.** { *; }
+-dontwarn net.zetetic.**

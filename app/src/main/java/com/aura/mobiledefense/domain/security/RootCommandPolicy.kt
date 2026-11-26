@@ -50,17 +50,27 @@ object RootCommandPolicy {
         // defensiva y su propio motor de integridad penaliza Permissive. No puede existir un camino
         // firmado que reduzca la postura de seguridad del dispositivo.
         "setenforce 1",
-        "setenforce 1 && getenforce",
-        "iptables -c input -p tcp --dport 5555 -j drop 2>/dev/null || iptables -i input -p tcp --dport 5555 -j drop",
-        "iptables -i input -p tcp --dport 5555 -j drop"
+        "setenforce 1 && getenforce"
+        // Los DROPs de puertos administrativos viven en [administrativeDropTemplates]: una sola
+        // fuente de verdad, sin duplicados.
     )
 
     /** Ports whose DROP rule Aura is allowed to create by itself. */
     private val administrativePorts = setOf(23, 5555, 6379, 27017)
 
-    private val forgedMitigationPrefixes = listOf(
-        "iptables -i input -p tcp --dport ", "iptables -c input -p tcp --dport "
-    )
+    /**
+     * Plantillas COMPLETAS de auto-mitigación: una entrada literal por puerto y forma, sin
+     * matching por prefijo. Cualquier variación — orden de flags, flags extra, comillas raras,
+     * redirecciones, encadenado — no casa y cae al resto de la política (o se deniega).
+     * Antes se aceptaba por prefijo `iptables -i input -p tcp --dport ` + puerto en la lista,
+     * algo frágil: este set cerrado lo elimina entero.
+     */
+    private val administrativeDropTemplates: Set<String> = buildSet {
+        for (port in administrativePorts) {
+            add("iptables -i input -p tcp --dport $port -j drop")
+            add("iptables -c input -p tcp --dport $port -j drop 2>/dev/null || iptables -i input -p tcp --dport $port -j drop")
+        }
+    }
 
     /** Hard denials: destructive, persistence, or side-channel execution primitives. */
     private val forbiddenTokens = listOf(
@@ -106,14 +116,14 @@ object RootCommandPolicy {
     private val trustedInternalCommands = setOf(
         // NetworkForensicsEngine: sockets, vecinos ARP e iptables en modo lectura
         "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; " +
-            "ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null | head -n 25",
+            "ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null",
         // BinaryCryptoEngine: inventario de paquetes de terceros
-        "pm list packages -3 -f | head -n 25",
+        "pm list packages -3 -f",
         // PrivilegeAndDeviceEngine: sondeo de root y auditoría del kernel
         "id && getenforce 2>/dev/null",
-        "id && getenforce && uname -a && ps -A -Z | head -n 25",
-        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null) | head -n 20; " +
-            "echo '---MOUNTS---'; mount | head -n 18; echo '---PROCS---'; ps -A -Z 2>/dev/null | head -n 20"
+        "id && getenforce && uname -a && ps -A -Z",
+        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); " +
+            "echo '---MOUNTS---'; mount; echo '---PROCS---'; ps -A -Z 2>/dev/null"
     )
 
     /**
@@ -155,13 +165,8 @@ object RootCommandPolicy {
         if (mitigationTemplates.contains(normalized)) {
             return Decision.Allowed(raw, elevated, readOnly = false)
         }
-        if (forgedMitigationPrefixes.any { normalized.startsWith(it) }) {
-            val port = normalized.substringAfter("--dport ").substringBefore(" ").trim()
-            val ipPort = port.toIntOrNull()
-            if (ipPort != null && ipPort in administrativePorts && normalized.endsWith("-j drop")) {
-                return Decision.Allowed(raw, elevated, readOnly = false)
-            }
-            return Decision.Denied("Plantilla iptables no reconocida.")
+        if (administrativeDropTemplates.contains(normalized)) {
+            return Decision.Allowed(raw, elevated, readOnly = false)
         }
 
         forbiddenSubstrings.firstOrNull { raw.contains(it) }?.let {

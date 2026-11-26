@@ -129,7 +129,7 @@ class NetworkForensicsEngine(private val context: Context) {
                 sb.appendLine()
                 sb.appendLine("=== AUDITORÍA KERNEL DE SOCKETS Y NETFILTER (su) ===")
                 val suNet = ShellRunner.run(
-                    command = "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null | head -n 25",
+                    command = "ss -tulnpa 2>/dev/null || netstat -tulnpa 2>/dev/null; echo '---IP-NEIGH---'; ip neigh show 2>/dev/null; echo '---IPTABLES---'; iptables -L -n 2>/dev/null",
                     elevated = true,
                     timeoutMs = 7000L
                 ).combined.ifBlank { "Sin salida de la inspección kernel." }

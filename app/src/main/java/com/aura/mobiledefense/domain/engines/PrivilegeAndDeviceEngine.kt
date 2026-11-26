@@ -126,7 +126,7 @@ class PrivilegeAndDeviceEngine(private val context: Context) {
                 sb.appendLine("=== TELEMETRÍA KERNEL / ROOT (su) ===")
                 if (rootState.verified) {
                     val kernelTelemetry = runSuCommand(
-                        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null) | head -n 20; echo '---MOUNTS---'; mount | head -n 18; echo '---PROCS---'; ps -A -Z 2>/dev/null | head -n 20",
+                        "uname -a; echo '---LSMOD---'; (lsmod 2>/dev/null || cat /proc/modules 2>/dev/null); echo '---MOUNTS---'; mount; echo '---PROCS---'; ps -A -Z 2>/dev/null",
                         timeoutMs = 7000L
                     )
                     sb.appendLine(kernelTelemetry.stdout.ifBlank { kernelTelemetry.stderr })
@@ -163,7 +163,7 @@ class PrivilegeAndDeviceEngine(private val context: Context) {
     ): ToolExecutionResult = withContext(Dispatchers.IO) {
         val requestedCmd = command.trim().removePrefix("/su").trim()
         val cleanCmd = requestedCmd.ifBlank {
-            "id && getenforce && uname -a && ps -A -Z | head -n 25"
+            "id && getenforce && uname -a && ps -A -Z"
         }
 
         // Default-deny gate: every shell string (free-form chat text included) must pass the policy
