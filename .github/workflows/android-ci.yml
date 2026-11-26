@@ -132,11 +132,32 @@ jobs:
 
       - name: Unit tests (suite completa con Robolectric)
         if: success()
-        timeout-minutes: 40
+        timeout-minutes: 35
         run: |
           set +e
-          ./gradlew :app:testDebugUnitTest --stacktrace 2>&1 | tee tests.log
-          status=${PIPESTATUS[0]}
+          ./gradlew :app:testDebugUnitTest --stacktrace > tests.log 2>&1 &
+          GPID=$!
+          elapsed=0
+          while kill -0 "$GPID" 2>/dev/null && [ "$elapsed" -lt 1560 ]; do
+            sleep 15; elapsed=$((elapsed+15))
+          done
+          if kill -0 "$GPID" 2>/dev/null; then
+            echo "::error title=HANG detected::full suite still running after ${elapsed}s"
+            {
+              echo "== ps =="; ps aux --sort=-%cpu | head -12
+              for pid in $(pgrep -f 'GradleWrapperMain|GradleDaemon|worker.org.gradle|TestExecutor' || true); do
+                echo "== jstack $pid =="
+                jstack "$pid" 2>&1 | grep -A6 -E "^(main|Test worker|Daemon worker|ForkJoinPool)" | head -100
+              done
+            } > jstack_full.txt 2>&1
+            ttail=$(tail -c 3500 tests.log | tr '\n' '~' | tr -d '\r')
+            jcore=$(tail -c 3500 jstack_full.txt | tr '\n' '~' | tr -d '\r')
+            echo "::error title=HANG log tail::${ttail}"
+            echo "::error title=HANG jstack::${jcore}"
+            kill -TERM "$GPID" 2>/dev/null; sleep 5; kill -KILL "$GPID" 2>/dev/null
+            exit 124
+          fi
+          wait "$GPID"; status=$?
           echo "::notice title=full suite exit::$status"
           if [ "$status" -ne 0 ]; then
             errors=$(grep -E "^(e: |> Task .*FAILED|FAILURE:|\* What went wrong|Caused by:|Execution failed|[A-Za-z0-9_.]+Test >)" -A2 tests.log | head -80 | tr '\n' '~' | tr -d '\r')

@@ -47,13 +47,19 @@ object TargetValidator {
         if (kind == AuraToolCatalog.TargetKind.NONE) return true
         if (target.isBlank()) return !requiresNonBlank(kind)
 
-        if (shellMetachars.any { target.contains(it) }) return false
         if (target.length > 253) return false
 
         return when (kind) {
-            AuraToolCatalog.TargetKind.HOST -> isHost(target)
-            AuraToolCatalog.TargetKind.PATTERN ->
-                isHost(target) || isIp(target) || port.matches(target) && target.toInt() in 1..65535
+            AuraToolCatalog.TargetKind.HOST,
+            AuraToolCatalog.TargetKind.PATTERN -> {
+                // Hosts nunca pueden combinar comandos: aquí sí aplica la regla dura.
+                if (shellMetachars.any { target.contains(it) }) return false
+                when (kind) {
+                    AuraToolCatalog.TargetKind.HOST -> isHost(target)
+                    else -> isHost(target) || isIp(target) || port.matches(target) && target.toInt() in 1..65535
+                }
+            }
+            // El texto libre delega en isSafeFreeText, que permite encadenar lecturas con &&.
             AuraToolCatalog.TargetKind.FREETEXT -> isSafeFreeText(target)
             AuraToolCatalog.TargetKind.NONE -> true
         }
@@ -79,14 +85,37 @@ object TargetValidator {
 
     fun isPackageName(value: String): Boolean = packageName.matches(value)
 
+    // Comandos de solo lectura que un auditor raiz puede encadenar con && (id && getenforce,
+    // whoami && uname). Nada mas entra: una sede, dos lecturas, cero escritura.
+    private val safeReadOnlyCommands = setOf(
+        "id", "whoami", "uname", "hostname", "getenforce", "getprop",
+        "uptime", "date", "which", "ps", "df", "mount"
+    )
+
+    // Metacaracteres que nunca se permiten en texto libre, ni entre comandos inofensivos:
+    // redirecciones, sustitucion, escapes, una sola & (backgrounding) y NUL/saltos.
+    private val freeTextHardBanned = listOf(
+        ";", "|", ">", "<", "`", "$", "\\", "&", "\n", "\r", "\u0000"
+    )
+
     /**
      * Free text is the only kind that can reach `su -c` (ROOT_SHELL) or the crypto analyzer.
-     * Reject anything that looks like an attempt at command chaining or a destructive binary.
+     * Rules: never any redirection/substitution/escape, the only chaining combinator allowed is
+     * `&&` between whitelisted read-only commands, and no destructive binary anywhere.
      */
     fun isSafeFreeText(value: String): Boolean {
-        if (value.length > 400) return false
-        if (shellMetachars.any { value.contains(it) }) return false
+        if (value.isBlank() || value.length > 400) return false
         val lower = value.lowercase()
-        return forbiddenShellWords.none { lower.contains(it) }
+        if (forbiddenShellWords.any { lower.contains(it) }) return false
+
+        // Quitamos el unico combinador permitido para inspeccionar cada segmento por separado.
+        val segments = lower.split("&&")
+        return segments.all { segment ->
+            val s = segment.trim()
+            if (s.isEmpty()) return@all false
+            if (freeTextHardBanned.any { s.contains(it) }) return@all false
+            val head = s.substringBefore(' ').trim()
+            safeReadOnlyCommands.contains(head)
+        }
     }
 }
