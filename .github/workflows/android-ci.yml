@@ -33,7 +33,7 @@ jobs:
           java-version: '21'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # El proyecto necesita el wrapper versionado para compilar desde un clone limpio.
       - name: Verify Gradle wrapper
@@ -218,7 +218,7 @@ jobs:
           echo "::notice title=paquetes SDK::${PKGS}"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Generate debug keystore
         run: |
@@ -322,7 +322,7 @@ jobs:
           java-version: '21'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Generate throwaway release keystore
         run: |
