@@ -117,7 +117,7 @@ class VpnFirewallRealTest {
             byteArrayOf(0x12, 0x34).let { write(it, 0, it.size) }                  // id
             write(byteArrayOf(0x81.toByte(), 0x80.toByte())) // flags: response, no error
             byteArrayOf(0x00, 0x01, 0x00, 0x02).let { write(it, 0, it.size) }      // qd=1, an=2
-            ByteArray(6).let { write(it, 0, it.size) }                             // ns, ar
+            ByteArray(4).let { write(it, 0, it.size) }                             // ns, ar
             byteArrayOf(0x04).let { write(it, 0, it.size) }; write("aura".toByteArray())
             byteArrayOf(0x03).let { write(it, 0, it.size) }; write("com".toByteArray())
             write(0x00)
@@ -154,6 +154,8 @@ class VpnFirewallRealTest {
         packet[tcp] = 0x1F.toByte(); packet[tcp + 1] = 0x90.toByte()   // src port 8080
         packet[tcp + 2] = 0x01; packet[tcp + 3] = 0xBB.toByte()        // dst port 443
         packet[tcp + 4] = ((seq shr 24) and 0xFF).toByte()
+        packet[tcp + 5] = ((seq shr 16) and 0xFF).toByte()
+        packet[tcp + 6] = ((seq shr 8) and 0xFF).toByte()
         packet[tcp + 7] = (seq and 0xFF).toByte()
         packet[tcp + 12] = 0x50
         packet[tcp + 13] = flags.toByte()

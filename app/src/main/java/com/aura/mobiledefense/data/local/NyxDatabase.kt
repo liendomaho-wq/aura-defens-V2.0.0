@@ -38,6 +38,16 @@ abstract class NyxDatabase : RoomDatabase() {
         fun getInMemory(context: Context): NyxDatabase =
             Room.inMemoryDatabaseBuilder(context.applicationContext, NyxDatabase::class.java).build()
 
+        /**
+         * Variante tolerante a fallos del KeyStore para rutas que no pueden permitirse lanzar:
+         * el servicio VPN se inicializa antes de que la UI pueda avisar, así que si cifrar en
+         * reposo no es posible (KeyStore roto, ROM restaurada…) se usa una base volátil en
+         * memoria en vez de tumbar el firewall. La UI se entera por
+         * [AuraDatabaseCipher.lastFaultReason]. getInstance sigue lanzando a propósito.
+         */
+        fun getOrInMemory(context: Context): NyxDatabase =
+            runCatching { getInstance(context) }.getOrElse { getInMemory(context) }
+
         fun getInstance(context: Context): NyxDatabase {
             val current = INSTANCE
             if (current != null && current.isOpen) return current

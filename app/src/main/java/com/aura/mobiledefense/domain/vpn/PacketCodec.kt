@@ -1,6 +1,5 @@
 package com.aura.mobiledefense.domain.vpn
 
-import java.net.InetAddress
 import java.nio.ByteBuffer
 
 data class ParsedIpPacket(
@@ -33,7 +32,10 @@ object PacketCodec {
         if (ihlBytes < 20 || length < ihlBytes) return null
 
         val totalLen = ((packet[2].toInt() and 0xFF) shl 8) or (packet[3].toInt() and 0xFF)
-        val actualLen = minOf(length, totalLen)
+        // Un paquete cuyo total declarado excede los bytes leídos está truncado o corrupto:
+        // parsearlo "a medias" es el escenario clásico de desbordamiento del firewall.
+        if (totalLen < ihlBytes || totalLen > length) return null
+        val actualLen = totalLen
         val protocol = packet[9].toInt() and 0xFF
 
         val srcIp = packet.copyOfRange(12, 16)
@@ -379,9 +381,21 @@ object PacketCodec {
     }
 
     fun parseIpv4AddressBytes(ip: String): ByteArray? {
-        return runCatching {
-            val addr = InetAddress.getByName(ip)
-            addr.address.takeIf { it.size == 4 }
-        }.getOrNull()
+        // Dotted-quad estricto: InetAddress.getByName acepta notación incompleta ("1.2.3" → 1.2.0.3)
+        // y hace una consulta DNS para cualquier etiqueta que no parsea — inaceptable al construir
+        // paquetes. Solo se acepta A.B.C.D con cada octeto 0-255 sin ceros a la izquierda.
+        val parts = ip.trim().split('.')
+        if (parts.size != 4) return null
+        val out = ByteArray(4)
+        for (i in 0 until 4) {
+            val p = parts[i]
+            if (p.isEmpty() || p.length > 3) return null
+            if (!p.all { it in '0'..'9' }) return null
+            if (p.length > 1 && p[0] == '0') return null
+            val v = p.toIntOrNull() ?: return null
+            if (v > 255) return null
+            out[i] = v.toByte()
+        }
+        return out
     }
 }

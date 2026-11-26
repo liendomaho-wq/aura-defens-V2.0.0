@@ -65,7 +65,7 @@ object VpnFirewallManager {
     }
 
     suspend fun ensureInitialized(context: Context) = withContext(Dispatchers.IO) {
-        val dao = NyxDatabase.getInstance(context).forensicSessionDao()
+        val dao = NyxDatabase.getOrInMemory(context).forensicSessionDao()
         if (dao.countFirewallRules() == 0) {
             val now = System.currentTimeMillis()
             val seedRules = listOf(
@@ -154,7 +154,7 @@ object VpnFirewallManager {
             .removePrefix("https://")
             .removePrefix("http://")
             .substringBefore("/")
-        val dao = NyxDatabase.getInstance(context).forensicSessionDao()
+        val dao = NyxDatabase.getOrInMemory(context).forensicSessionDao()
         val rule = FirewallRuleEntity(
             id = "fw_${UUID.randomUUID().toString().take(8)}",
             pattern = cleanPattern,
@@ -173,7 +173,7 @@ object VpnFirewallManager {
     }
 
     suspend fun removeRule(context: Context, patternOrId: String) = withContext(Dispatchers.IO) {
-        val dao = NyxDatabase.getInstance(context).forensicSessionDao()
+        val dao = NyxDatabase.getOrInMemory(context).forensicSessionDao()
         val clean = patternOrId.trim().lowercase()
         dao.deleteFirewallRuleByPatternOrId(clean)
         refreshRulesFromDao(dao)

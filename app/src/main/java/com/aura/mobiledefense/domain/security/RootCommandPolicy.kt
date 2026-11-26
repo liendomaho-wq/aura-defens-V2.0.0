@@ -123,7 +123,10 @@ object RootCommandPolicy {
     private val protectedPathPrefixes = listOf(
         "/system", "/vendor", "/product", "/oem", "/data/adb", "/data/system",
         "/data/data", "/data/misc", "/sbin", "/init.rc", "/dev/block", "/dev/mem",
-        "/dev/kmem", "/dev/port", "/proc/kcore", "/proc/sysrq-trigger", "/proc/sys/kernel"
+        "/dev/kmem", "/dev/port", "/proc/kcore", "/proc/sysrq-trigger"
+        // OJO: /proc/sys/kernel NO se bloquea — la anti-debug/anti-root de Aura lee
+        // randomize_va_space y hosts. Escribir ahí sigue imposible: los binarios son de solo
+        // lectura, las redirecciones están prohibidas y sysctl/setprop no están en la lista.
     )
 
     private val pipelineSeparators = Regex("(\\|\\||&&|;|\\|)")
