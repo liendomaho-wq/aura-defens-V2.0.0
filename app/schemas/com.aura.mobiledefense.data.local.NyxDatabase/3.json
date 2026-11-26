@@ -12,73 +12,55 @@
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "timestamp",
             "columnName": "timestamp",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "query",
             "columnName": "query",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "title",
             "columnName": "title",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "visualKind",
             "columnName": "visualKind",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "privilegeMode",
             "columnName": "privilegeMode",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "severityScore",
             "columnName": "severityScore",
             "affinity": "REAL",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "toolExecuted",
             "columnName": "toolExecuted",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "sceneJson",
             "columnName": "sceneJson",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -86,19 +68,7 @@
           "columnNames": [
             "id"
           ]
-        },
-        "indices": [
-          {
-            "name": "index_forensic_sessions_timestamp",
-            "unique": false,
-            "columnNames": [
-              "timestamp"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_forensic_sessions_timestamp` ON `forensic_sessions` (`timestamp`)",
-            "orders": []
-          }
-        ],
-        "compositeIndices": []
+        }
       },
       {
         "tableName": "monitor_targets",
@@ -108,105 +78,79 @@
             "fieldPath": "target",
             "columnName": "target",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "baselineRttMs",
             "columnName": "baselineRttMs",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "lastRttMs",
             "columnName": "lastRttMs",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "baselineStatusCode",
             "columnName": "baselineStatusCode",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "lastStatusCode",
             "columnName": "lastStatusCode",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "baselineTlsSha256",
             "columnName": "baselineTlsSha256",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "lastTlsSha256",
             "columnName": "lastTlsSha256",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "baselineHeaderCount",
             "columnName": "baselineHeaderCount",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "lastHeaderCount",
             "columnName": "lastHeaderCount",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "checkCount",
             "columnName": "checkCount",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "anomalyCount",
             "columnName": "anomalyCount",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "lastCheckedAt",
             "columnName": "lastCheckedAt",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "isActive",
             "columnName": "isActive",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -214,9 +158,7 @@
           "columnNames": [
             "target"
           ]
-        },
-        "indices": [],
-        "compositeIndices": []
+        }
       },
       {
         "tableName": "anomaly_events",
@@ -226,49 +168,37 @@
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "target",
             "columnName": "target",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "kind",
             "columnName": "kind",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "severity",
             "columnName": "severity",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "description",
             "columnName": "description",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "timestamp",
             "columnName": "timestamp",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -276,28 +206,7 @@
           "columnNames": [
             "id"
           ]
-        },
-        "indices": [
-          {
-            "name": "index_anomaly_events_target",
-            "unique": false,
-            "columnNames": [
-              "target"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_anomaly_events_target` ON `anomaly_events` (`target`)",
-            "orders": []
-          },
-          {
-            "name": "index_anomaly_events_timestamp",
-            "unique": false,
-            "columnNames": [
-              "timestamp"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_anomaly_events_timestamp` ON `anomaly_events` (`timestamp`)",
-            "orders": []
-          }
-        ],
-        "compositeIndices": []
+        }
       },
       {
         "tableName": "threat_rules",
@@ -307,65 +216,49 @@
             "fieldPath": "ruleId",
             "columnName": "ruleId",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "source",
             "columnName": "source",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "vendorOrCategory",
             "columnName": "vendorOrCategory",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "title",
             "columnName": "title",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "keywords",
             "columnName": "keywords",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "severity",
             "columnName": "severity",
             "affinity": "REAL",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "remediationHint",
             "columnName": "remediationHint",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "updatedAt",
             "columnName": "updatedAt",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -373,19 +266,7 @@
           "columnNames": [
             "ruleId"
           ]
-        },
-        "indices": [
-          {
-            "name": "index_threat_rules_vendorOrCategory",
-            "unique": false,
-            "columnNames": [
-              "vendorOrCategory"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_threat_rules_vendorOrCategory` ON `threat_rules` (`vendorOrCategory`)",
-            "orders": []
-          }
-        ],
-        "compositeIndices": []
+        }
       },
       {
         "tableName": "firewall_rules",
@@ -395,57 +276,43 @@
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "pattern",
             "columnName": "pattern",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "ruleType",
             "columnName": "ruleType",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "action",
             "columnName": "action",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "reason",
             "columnName": "reason",
             "affinity": "TEXT",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "enabled",
             "columnName": "enabled",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           },
           {
             "fieldPath": "createdAt",
             "columnName": "createdAt",
             "affinity": "INTEGER",
-            "notNull": true,
-            "createdFrom": 1,
-            "defaultValue": null
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -453,19 +320,7 @@
           "columnNames": [
             "id"
           ]
-        },
-        "indices": [
-          {
-            "name": "index_firewall_rules_pattern",
-            "unique": false,
-            "columnNames": [
-              "pattern"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_firewall_rules_pattern` ON `firewall_rules` (`pattern`)",
-            "orders": []
-          }
-        ],
-        "compositeIndices": []
+        }
       }
     ],
     "setupQueries": [

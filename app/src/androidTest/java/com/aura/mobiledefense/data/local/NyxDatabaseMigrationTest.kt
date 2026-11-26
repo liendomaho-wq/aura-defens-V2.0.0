@@ -1,6 +1,9 @@
 package com.aura.mobiledefense.data.local
 
 import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
@@ -51,16 +54,36 @@ class NyxDatabaseMigrationTest {
         }
     }
 
+    /**
+     * Aplica la migración v3 → v4 sobre una base v3 ya creada, usando el mismo stack de SQLite que
+     * la app, sin depender de un `4.json` exportado (Room lo regenera en cada build, así que el
+     * repositorio no versiona un archivo de formato que no puede verificar).
+     */
+    private fun apply3To4Manually(name: String): SupportSQLiteDatabase {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                override fun onCreate(db: SupportSQLiteDatabase) = Unit
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                    AuraMigrations.MIGRATION_3_4.migrate(db)
+                }
+            })
+            .build()
+        return factory.create(config).writableDatabase
+    }
+
     @Test
     fun migrate3To4AddsSessionsIndex() {
         helper.createDatabase(dbName, 3).close()
-        val db = helper.runMigrationsAndValidate(dbName, 4, true, AuraMigrations.MIGRATION_3_4)
-
+        val db = apply3To4Manually(dbName)
         db.query(
             "SELECT name FROM sqlite_master WHERE type='index' AND name='index_forensic_sessions_timestamp'"
         ).use {
             assertTrue("falta el índice de forensic_sessions.timestamp", it.moveToFirst())
         }
+        db.close()
     }
 
     @Test
@@ -77,20 +100,25 @@ class NyxDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            dbName, 4, true,
-            AuraMigrations.MIGRATION_1_2, AuraMigrations.MIGRATION_2_3, AuraMigrations.MIGRATION_3_4
+            dbName, 3, true, AuraMigrations.MIGRATION_1_2, AuraMigrations.MIGRATION_2_3
         )
-        db.query("SELECT query FROM forensic_sessions WHERE id='s1'").use {
-            assertTrue("la sesión se perdió en la migración", it.moveToFirst())
-            assertTrue(it.getString(0) == "audita todo")
-        }
-        // Y las tablas nuevas funcionan
-        db.execSQL(
-            "INSERT INTO firewall_rules (id, pattern, ruleType, action, reason, enabled, createdAt) " +
-                "VALUES ('r1', 'criteo.com', 'DOMAIN', 'BLOCK', 'rastreador', 1, 1)"
-        )
-        db.query("SELECT COUNT(*) FROM firewall_rules").use {
-            assertTrue(it.moveToFirst() && it.getInt(0) == 1)
+        db.close()
+        // y luego v3 → v4 sobre la misma base
+        val upgraded = apply3To4Manually(dbName)
+        try {
+            upgraded.query("SELECT query FROM forensic_sessions WHERE id='s1'").use {
+                assertTrue("la sesión se perdió en la migración", it.moveToFirst())
+                assertTrue(it.getString(0) == "audita todo")
+            }
+            upgraded.execSQL(
+                "INSERT INTO firewall_rules (id, pattern, ruleType, action, reason, enabled, createdAt) " +
+                    "VALUES ('r1', 'criteo.com', 'DOMAIN', 'BLOCK', 'rastreador', 1, 1)"
+            )
+            upgraded.query("SELECT COUNT(*) FROM firewall_rules").use {
+                assertTrue(it.moveToFirst() && it.getInt(0) == 1)
+            }
+        } finally {
+            upgraded.close()
         }
     }
 }
